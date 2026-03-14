@@ -1,0 +1,194 @@
+:root {
+  --ink: #1a1a1a;
+  --muted: #666;
+  --bg: #f6f5f2;
+  --card: #ffffff;
+  --line: #dedacf;
+  --ok: #0e8a43;
+  --warn: #9d5c00;
+  --bad: #b00020;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 10% 0%, #fff7e0 0%, transparent 40%),
+    radial-gradient(circle at 90% 0%, #eaf5ff 0%, transparent 40%),
+    var(--bg);
+  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+a {
+  color: inherit;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #fffaf0cc;
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0.85rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.brand {
+  text-decoration: none;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.nav {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.nav a {
+  text-decoration: none;
+  color: var(--muted);
+}
+
+.layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.hero {
+  background: linear-gradient(135deg, #fffef8, #f8f7f2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+h1,
+h2 {
+  margin-top: 0;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+button {
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid #2a2a2a;
+  background: #2a2a2a;
+  color: #fff;
+  padding: 0.55rem 0.85rem;
+  font-weight: 600;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  border-bottom: 1px solid #efede7;
+  padding: 0.6rem 0.45rem;
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.badge-ok {
+  color: var(--ok);
+  border-color: #89d2a9;
+  background: #effbf3;
+}
+
+.badge-warn {
+  color: var(--warn);
+  border-color: #f0cc8a;
+  background: #fff8eb;
+}
+
+.badge-bad {
+  color: var(--bad);
+  border-color: #f5b3be;
+  background: #fff1f3;
+}
+
+.mono {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+}
+
+.small {
+  font-size: 0.82rem;
+}
+
+.terminal {
+  margin: 0;
+  background: #141414;
+  color: #b9f3a9;
+  border: 1px solid #2b2b2b;
+  border-radius: 10px;
+  min-height: 240px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 0.8rem;
+  line-height: 1.35;
+  font-size: 0.82rem;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+}
+
+code {
+  background: #f5f1e8;
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+}
+
+@media (max-width: 860px) {
+  .nav {
+    display: none;
+  }
+
+  table {
+    font-size: 0.9rem;
+  }
+}
