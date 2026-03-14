@@ -21,11 +21,11 @@ const ZERO_COUNTERS: SyncCounters = {
   failed: 0
 };
 
-function isOnOrAfterCutoff(uploadDate: string | null): boolean {
+function isKnownBeforeCutoff(uploadDate: string | null): boolean {
   if (!uploadDate) {
     return false;
   }
-  return uploadDate >= config.minUploadDate;
+  return uploadDate < config.minUploadDate;
 }
 
 function nextCounters(base: SyncCounters, delta: Partial<SyncCounters>): SyncCounters {
@@ -195,7 +195,7 @@ export class SyncService {
 
     try {
       for (const video of blockedVideos) {
-        if (!isOnOrAfterCutoff(video.upload_date)) {
+        if (isKnownBeforeCutoff(video.upload_date)) {
           this.db.markVideoSkipped(
             video.id,
             `Skipped by cutoff date: upload_date=${video.upload_date ?? "unknown"} < ${config.minUploadDate}`
@@ -214,16 +214,29 @@ export class SyncService {
 
         try {
           const result = await downloadVideo(video.youtube_video_id);
-          this.db.markVideoDownloaded(video.id, result.localPath, result.fileSize);
-          this.db.addEvent(
-            runId,
-            "info",
-            "retry-cookie-downloaded",
-            `downloaded "${video.title}"`,
-            video.channel_id,
-            video.id
-          );
-          counters = nextCounters(counters, { downloaded: 1 });
+          if (result.status === "downloaded") {
+            this.db.markVideoDownloaded(video.id, result.localPath, result.fileSize);
+            this.db.addEvent(
+              runId,
+              "info",
+              "retry-cookie-downloaded",
+              `downloaded "${video.title}"`,
+              video.channel_id,
+              video.id
+            );
+            counters = nextCounters(counters, { downloaded: 1 });
+          } else {
+            this.db.markVideoSkipped(video.id, result.reason);
+            this.db.addEvent(
+              runId,
+              "info",
+              "retry-cookie-skipped",
+              `skipped "${video.title}": ${result.reason}`,
+              video.channel_id,
+              video.id
+            );
+            counters = nextCounters(counters, { skipped: 1 });
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (isCookieAuthError(message)) {
@@ -285,21 +298,17 @@ export class SyncService {
     this.logger.info(`run=${runId} channel=${channel.handle} checking`);
 
     try {
-      const discovered = await discoverChannel(channel.url);
-      const eligible = discovered.filter((item) => isOnOrAfterCutoff(item.uploadDate));
-      const filteredOut = discovered.length - eligible.length;
+      // Date cutoff is enforced by yt-dlp via --dateafter during discovery.
+      const discovered = await discoverChannel(channel.url, config.minUploadDate);
       this.db.addEvent(
         runId,
         "info",
         "channel-discovered",
-        `found ${discovered.length} videos in feed, eligible=${eligible.length}, skipped_by_cutoff=${filteredOut}`,
+        `found ${discovered.length} videos in feed (date cutoff >= ${config.minUploadDate})`,
         channel.id
       );
-      if (filteredOut > 0) {
-        counters = nextCounters(counters, { skipped: filteredOut });
-      }
 
-      for (const item of eligible) {
+      for (const item of discovered) {
         const upsert = this.db.upsertDiscoveredVideo(channel.id, item);
         if (upsert.isNew) {
           counters = nextCounters(counters, { discovered: 1 });
@@ -327,17 +336,31 @@ export class SyncService {
 
         try {
           const result = await downloadVideo(item.youtubeVideoId);
-          this.db.markVideoDownloaded(upsert.id, result.localPath, result.fileSize);
-          this.db.addEvent(
-            runId,
-            "info",
-            "video-downloaded",
-            `downloaded "${item.title}"`,
-            channel.id,
-            upsert.id
-          );
-          this.logger.info(`run=${runId} channel=${channel.handle} downloaded video=${item.youtubeVideoId}`);
-          counters = nextCounters(counters, { downloaded: 1 });
+          if (result.status === "downloaded") {
+            this.db.markVideoDownloaded(upsert.id, result.localPath, result.fileSize);
+            this.db.addEvent(
+              runId,
+              "info",
+              "video-downloaded",
+              `downloaded "${item.title}"`,
+              channel.id,
+              upsert.id
+            );
+            this.logger.info(`run=${runId} channel=${channel.handle} downloaded video=${item.youtubeVideoId}`);
+            counters = nextCounters(counters, { downloaded: 1 });
+          } else {
+            this.db.markVideoSkipped(upsert.id, result.reason);
+            this.db.addEvent(
+              runId,
+              "info",
+              "video-skipped",
+              `skipped "${item.title}": ${result.reason}`,
+              channel.id,
+              upsert.id
+            );
+            this.logger.info(`run=${runId} channel=${channel.handle} skipped video=${item.youtubeVideoId} reason=${result.reason}`);
+            counters = nextCounters(counters, { skipped: 1 });
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (isCookieAuthError(message)) {

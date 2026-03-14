@@ -56,8 +56,18 @@ interface ChannelJsonResponse {
   entries?: ChannelJsonEntry[];
 }
 
-export async function discoverChannel(channelUrl: string): Promise<DiscoveredVideo[]> {
-  const { stdout } = await runCommand(["--flat-playlist", "--dump-single-json", channelUrl]);
+function cutoffForYtDlp(minUploadDate: string): string {
+  return minUploadDate.replaceAll("-", "");
+}
+
+export async function discoverChannel(channelUrl: string, minUploadDate: string): Promise<DiscoveredVideo[]> {
+  const { stdout } = await runCommand([
+    "--flat-playlist",
+    "--dateafter",
+    cutoffForYtDlp(minUploadDate),
+    "--dump-single-json",
+    channelUrl
+  ]);
   const parsed = JSON.parse(stdout) as ChannelJsonResponse;
   const entries = parsed.entries ?? [];
 
@@ -86,7 +96,25 @@ export async function discoverChannel(channelUrl: string): Promise<DiscoveredVid
     .filter((video): video is DiscoveredVideo => video !== null);
 }
 
-export async function downloadVideo(videoId: string): Promise<{ localPath: string; fileSize: number }> {
+function inferSkipReason(output: string): string {
+  const lower = output.toLowerCase();
+  if (lower.includes("does not pass filter")) {
+    return "Skipped by yt-dlp filter (likely upload date cutoff).";
+  }
+  if (lower.includes("has already been downloaded")) {
+    return "Skipped by yt-dlp archive (already downloaded).";
+  }
+  if (lower.includes("already exists")) {
+    return "Skipped because output file already exists.";
+  }
+  return "yt-dlp completed without producing an MP3 output path.";
+}
+
+export type DownloadOutcome =
+  | { status: "downloaded"; localPath: string; fileSize: number }
+  | { status: "skipped"; reason: string };
+
+export async function downloadVideo(videoId: string): Promise<DownloadOutcome> {
   const url = `https://www.youtube.com/watch?v=${videoId}`;
   const outTemplate = `${config.downloadsDir}/%(channel)s/%(upload_date>%Y-%m-%d)s - %(title)s [%(id)s].%(ext)s`;
   const args = [
@@ -101,6 +129,8 @@ export async function downloadVideo(videoId: string): Promise<{ localPath: strin
     "ffmpeg:-id3v2_version 3",
     "--download-archive",
     config.archivePath,
+    "--dateafter",
+    cutoffForYtDlp(config.minUploadDate),
     "--write-info-json",
     "--print",
     "after_move:filepath",
@@ -119,14 +149,14 @@ export async function downloadVideo(videoId: string): Promise<{ localPath: strin
     .find((line) => line.endsWith(".mp3") && line.includes(config.downloadsDir));
 
   if (!candidate) {
-    throw new Error(`Could not locate output file for ${videoId}`);
+    return { status: "skipped", reason: inferSkipReason(combined) };
   }
 
   const marker = "Destination:";
   const markerIndex = candidate.indexOf(marker);
   const localPath = markerIndex === -1 ? candidate : candidate.slice(markerIndex + marker.length).trim();
   const fileSize = statSync(localPath).size;
-  return { localPath, fileSize };
+  return { status: "downloaded", localPath, fileSize };
 }
 
 export function isCookieAuthError(message: string): boolean {
