@@ -227,14 +227,6 @@ export class SyncService {
             counters = nextCounters(counters, { downloaded: 1 });
           } else {
             this.db.markVideoSkipped(video.id, result.reason);
-            this.db.addEvent(
-              runId,
-              "info",
-              "retry-cookie-skipped",
-              `skipped "${video.title}": ${result.reason}`,
-              video.channel_id,
-              video.id
-            );
             counters = nextCounters(counters, { skipped: 1 });
           }
         } catch (error) {
@@ -350,15 +342,6 @@ export class SyncService {
             counters = nextCounters(counters, { downloaded: 1 });
           } else {
             this.db.markVideoSkipped(upsert.id, result.reason);
-            this.db.addEvent(
-              runId,
-              "info",
-              "video-skipped",
-              `skipped "${item.title}": ${result.reason}`,
-              channel.id,
-              upsert.id
-            );
-            this.logger.info(`run=${runId} channel=${channel.handle} skipped video=${item.youtubeVideoId} reason=${result.reason}`);
             counters = nextCounters(counters, { skipped: 1 });
           }
         } catch (error) {
