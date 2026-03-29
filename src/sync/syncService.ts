@@ -1,5 +1,7 @@
 import { AppDb } from "../db.js";
-import { channelUrlForHandle, loadChannelHandles } from "../channelSource.js";
+import { DeviceSyncService } from "../deviceSync.js";
+import { reconcilePendingAgainstDevice } from "../deviceReconcile.js";
+import { channelUrlForHandle, loadChannelSources } from "../channelSource.js";
 import { Logger } from "../logger.js";
 import type { ChannelRecord, SyncCounters } from "../types.js";
 import { downloadVideo, discoverChannel, isCookieAuthError } from "./ytDlp.js";
@@ -12,6 +14,7 @@ interface SyncState {
   runId: number | null;
   scope: "all" | "single-channel" | null;
   targetHandle: string | null;
+  exportAfterSync: boolean;
 }
 
 const ZERO_COUNTERS: SyncCounters = {
@@ -43,10 +46,15 @@ export class SyncService {
     startedAt: null,
     runId: null,
     scope: null,
-    targetHandle: null
+    targetHandle: null,
+    exportAfterSync: false
   };
 
-  constructor(private readonly db: AppDb, private readonly logger: Logger) {}
+  constructor(
+    private readonly db: AppDb,
+    private readonly logger: Logger,
+    private readonly deviceSyncService: DeviceSyncService
+  ) {}
 
   getState(): SyncState {
     return { ...this.state };
@@ -56,7 +64,15 @@ export class SyncService {
     if (this.state.running) {
       return false;
     }
-    void this.syncAll();
+    void this.syncAll(false);
+    return true;
+  }
+
+  startSyncAllAndExport(): boolean {
+    if (this.state.running) {
+      return false;
+    }
+    void this.syncAll(true);
     return true;
   }
 
@@ -80,9 +96,9 @@ export class SyncService {
     this.state = { ...this.state, ...next };
   }
 
-  private async syncAll(): Promise<void> {
-    const handles = loadChannelHandles();
-    const channels = handles.map((handle) => this.db.upsertChannel(handle, channelUrlForHandle(handle)));
+  private async syncAll(exportAfterSync: boolean): Promise<void> {
+    const sources = loadChannelSources();
+    const channels = sources.map((source) => this.db.upsertChannel(source.key, source.url));
     const runId = this.db.createRun("all", null);
 
     this.setState({
@@ -90,14 +106,15 @@ export class SyncService {
       startedAt: new Date().toISOString(),
       runId,
       scope: "all",
-      targetHandle: null
+      targetHandle: exportAfterSync ? "device-export" : null,
+      exportAfterSync
     });
 
     let totals = { ...ZERO_COUNTERS };
     let status: "success" | "partial" | "failed" = "success";
     const index = new ExistingDownloadIndex(config.downloadsDir);
-    this.logger.info(`run=${runId} sync-all started (${channels.length} channels)`);
-    this.db.addEvent(runId, "info", "run-start", `sync all started for ${channels.length} channels`);
+    this.logger.info(`run=${runId} sync-all started (${channels.length} sources)`);
+    this.db.addEvent(runId, "info", "run-start", `sync all started for ${channels.length} sources`);
 
     try {
       for (const channel of channels) {
@@ -109,6 +126,9 @@ export class SyncService {
       }
       if (totals.downloaded === 0 && totals.failed > 0 && totals.discovered === 0) {
         status = "failed";
+      }
+      if (exportAfterSync) {
+        this.exportPendingToDevice(runId);
       }
     } catch (error) {
       status = "failed";
@@ -129,7 +149,8 @@ export class SyncService {
         startedAt: null,
         runId: null,
         scope: null,
-        targetHandle: null
+        targetHandle: null,
+        exportAfterSync: false
       });
     }
   }
@@ -144,7 +165,8 @@ export class SyncService {
       startedAt: new Date().toISOString(),
       runId,
       scope: "single-channel",
-      targetHandle: handle
+      targetHandle: handle,
+      exportAfterSync: false
     });
 
     this.logger.info(`run=${runId} sync-channel started handle=${handle}`);
@@ -172,7 +194,8 @@ export class SyncService {
         startedAt: null,
         runId: null,
         scope: null,
-        targetHandle: null
+        targetHandle: null,
+        exportAfterSync: false
       });
     }
   }
@@ -184,7 +207,8 @@ export class SyncService {
       startedAt: new Date().toISOString(),
       runId,
       scope: "all",
-      targetHandle: "cookie-blocked"
+      targetHandle: "cookie-blocked",
+      exportAfterSync: false
     });
 
     let counters = { ...ZERO_COUNTERS };
@@ -274,8 +298,79 @@ export class SyncService {
         startedAt: null,
         runId: null,
         scope: null,
-        targetHandle: null
+        targetHandle: null,
+        exportAfterSync: false
       });
+    }
+  }
+
+  private exportPendingToDevice(runId: number): void {
+    const device = this.deviceSyncService.getStatus();
+    if (!device.connected || !device.mountPath) {
+      const message = `device export skipped: ${device.reason ?? "device not connected"}`;
+      this.logger.warn(`run=${runId} ${message}`);
+      this.db.addEvent(runId, "warn", "device-export-skipped", message);
+      return;
+    }
+
+    const pendingBefore = this.db.listPendingExportVideos(5000);
+    const reconciliation = reconcilePendingAgainstDevice(pendingBefore, device.mountPath);
+    const reconciledIds = [
+      ...reconciliation.exactMatches.map((match) => match.item.id),
+      ...reconciliation.normalizedMatches.map((match) => match.item.id)
+    ];
+
+    if (reconciledIds.length > 0) {
+      this.db.markVideosAsExported(
+        reconciledIds,
+        `auto reconciliation; exact=${reconciliation.exactMatches.length}, normalized=${reconciliation.normalizedMatches.length}, ambiguous=${reconciliation.ambiguous.length}, unmatched=${reconciliation.unmatched.length}`
+      );
+      this.db.addEvent(
+        runId,
+        "info",
+        "device-export-reconciled",
+        `reconciled ${reconciledIds.length} existing device tracks`
+      );
+      this.logger.info(`run=${runId} reconciled existing device tracks count=${reconciledIds.length}`);
+    }
+
+    const pendingAfterReconcile = this.db.listPendingExportVideos(5000);
+    if (pendingAfterReconcile.length === 0) {
+      this.db.addEvent(runId, "info", "device-export-finish", "no pending tracks remained after reconciliation");
+      this.logger.info(`run=${runId} device export finished with no remaining pending tracks`);
+      return;
+    }
+
+    if (!device.writable) {
+      const message = `device export skipped copy because mount is read-only; remaining=${pendingAfterReconcile.length}`;
+      this.logger.warn(`run=${runId} ${message}`);
+      this.db.addEvent(runId, "warn", "device-export-read-only", message);
+      return;
+    }
+
+    const copyOutcome = this.deviceSyncService.syncPending(pendingAfterReconcile);
+    const exportedIds = [...copyOutcome.copied, ...copyOutcome.alreadyPresent].map((item) => item.id);
+    if (exportedIds.length > 0) {
+      this.db.markVideosAsExported(
+        exportedIds,
+        `auto copy; copied=${copyOutcome.copied.length}, existing=${copyOutcome.alreadyPresent.length}, missing=${copyOutcome.missingSource.length}, failed=${copyOutcome.failed.length}`
+      );
+    }
+
+    this.db.addEvent(
+      runId,
+      copyOutcome.failed.length > 0 ? "warn" : "info",
+      "device-export-finish",
+      `copied=${copyOutcome.copied.length} existing=${copyOutcome.alreadyPresent.length} missing=${copyOutcome.missingSource.length} failed=${copyOutcome.failed.length}`
+    );
+    this.logger.info(
+      `run=${runId} device export copied=${copyOutcome.copied.length} existing=${copyOutcome.alreadyPresent.length} missing=${copyOutcome.missingSource.length} failed=${copyOutcome.failed.length}`
+    );
+    for (const item of copyOutcome.missingSource) {
+      this.logger.warn(`run=${runId} device export missing source path=${item.local_path}`);
+    }
+    for (const failure of copyOutcome.failed) {
+      this.logger.error(`run=${runId} device export failed path=${failure.item.local_path} error=${failure.message}`);
     }
   }
 

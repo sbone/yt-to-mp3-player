@@ -8,7 +8,7 @@ import { config } from "./config.js";
 const logger = new Logger();
 const db = new AppDb();
 const deviceSyncService = new DeviceSyncService();
-const syncService = new SyncService(db, logger);
+const syncService = new SyncService(db, logger, deviceSyncService);
 const app = createServer(db, syncService, deviceSyncService, logger);
 
 app.listen(config.port, config.host, () => {

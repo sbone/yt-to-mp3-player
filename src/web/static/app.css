@@ -89,6 +89,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 1rem;
+  overflow-x: auto;
 }
 
 .actions {
@@ -243,17 +244,25 @@ code {
   }
 
   table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    font-size: 0.9rem;
+  }
+
+  thead,
+  tbody {
     display: table;
     width: 100%;
-    table-layout: fixed;
-    font-size: 0.9rem;
+    min-width: 720px;
+    table-layout: auto;
   }
 
   th,
   td {
-    padding: 0.5rem 0.35rem;
-    white-space: normal;
-    max-width: 0;
+    padding: 0.5rem 0.4rem;
+    white-space: nowrap;
+    max-width: none;
   }
 
   .terminal {
@@ -286,5 +295,10 @@ code {
 
   .small {
     font-size: 0.76rem;
+  }
+
+  thead,
+  tbody {
+    min-width: 640px;
   }
 }

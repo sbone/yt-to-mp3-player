@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { config } from "./config.js";
 
-function extractHandle(raw: string): string | null {
+export interface ChannelSourceEntry {
+  key: string;
+  url: string;
+}
+
+function extractSource(raw: string): ChannelSourceEntry | null {
   const value = raw.trim();
   if (!value || value.startsWith("#")) {
     return null;
@@ -9,37 +14,70 @@ function extractHandle(raw: string): string | null {
 
   if (value.startsWith("http://") || value.startsWith("https://")) {
     const url = new URL(value);
+    const playlistId = url.searchParams.get("list")?.trim();
+    if (playlistId) {
+      return {
+        key: `playlist:${playlistId}`,
+        url: value
+      };
+    }
+
     const parts = url.pathname.split("/").filter(Boolean);
     const atSegment = parts.find((part) => part.startsWith("@"));
     if (atSegment) {
-      return atSegment.slice(1);
+      const handle = atSegment.slice(1);
+      return {
+        key: handle,
+        url: channelUrlForHandle(handle)
+      };
     }
-    return parts[0] ?? null;
+
+    const fallback = parts[0]?.trim();
+    if (!fallback) {
+      return null;
+    }
+    return {
+      key: fallback,
+      url: value
+    };
   }
 
   if (value.startsWith("@")) {
-    return value.slice(1);
+    const handle = value.slice(1);
+    return {
+      key: handle,
+      url: channelUrlForHandle(handle)
+    };
   }
 
-  return value;
+  return {
+    key: value,
+    url: channelUrlForHandle(value)
+  };
 }
 
-export function loadChannelHandles(): string[] {
+export function loadChannelSources(): ChannelSourceEntry[] {
   let text = "";
   try {
     text = readFileSync(config.channelListPath, "utf8");
   } catch {
     return [];
   }
+
   const seen = new Set<string>();
+  const entries: ChannelSourceEntry[] = [];
   for (const line of text.split(/\r?\n/)) {
-    const handle = extractHandle(line);
-    if (!handle) {
+    const source = extractSource(line);
+    if (!source) {
       continue;
     }
-    seen.add(handle);
+    if (seen.has(source.key)) {
+      continue;
+    }
+    seen.add(source.key);
+    entries.push(source);
   }
-  return [...seen];
+  return entries;
 }
 
 export function channelUrlForHandle(handle: string): string {

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "./scripts/dev.sh",
     "build": "./scripts/build.sh",
-    "build:css": "tailwindcss -i ./src/web/static/input.css -o ./dist/public/app.css --minify",
+    "build:css": "mkdir -p dist/public && cp src/web/static/app.css dist/public/app.css",
     "check": "./scripts/check.sh",
     "doctor": "./scripts/doctor.sh",
     "reconcile:device": "./scripts/reconcile-device.sh",

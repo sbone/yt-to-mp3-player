@@ -18,6 +18,13 @@ function badgeClass(status: string): string {
   return "badge";
 }
 
+function channelLabel(handle: string | null | undefined): string {
+  if (!handle) {
+    return "";
+  }
+  return handle.startsWith("playlist:") ? handle : `@${handle}`;
+}
+
 function syncStateBox(syncService: SyncService): string {
   const state = syncService.getState();
   if (!state.running) {
@@ -56,7 +63,7 @@ function liveTerminalShell(): string {
               : "[IDLE] no active sync run");
             lines.push("");
             for (const event of payload.events) {
-              const channel = event.channel_handle ? " @" + event.channel_handle : "";
+              const channel = event.channel_handle ? " " + event.channel_handle : "";
               lines.push("[" + fmt(event.created_at) + "] [" + event.level.toUpperCase() + "] [run " + event.run_id + "] " + event.event_type + channel + " :: " + event.message);
             }
             terminal.textContent = lines.join("\\n");
@@ -93,7 +100,8 @@ export function createServer(
 
   const distAssetPath = resolve(config.rootDir, "dist/public");
   const devAssetPath = resolve(config.rootDir, "src/web/static");
-  app.use("/assets", express.static(existsSync(distAssetPath) ? distAssetPath : devAssetPath));
+  const assetPath = process.env.NODE_ENV === "production" && existsSync(distAssetPath) ? distAssetPath : devAssetPath;
+  app.use("/assets", express.static(assetPath));
 
   app.get("/", (_req, res) => {
     const channels = db.listChannelsOverview();
@@ -108,6 +116,9 @@ export function createServer(
         <p>Server-rendered status page for yt-dlp channel tracking.</p>
         <p class="small">Download cutoff: videos uploaded on or after ${h(config.minUploadDate)}.</p>
         <div class="actions">
+          <form method="post" action="/sync-and-export">
+            <button type="submit" ${deviceStatus.connected ? "" : "disabled"}>Sync + Export To Player</button>
+          </form>
           <form method="post" action="/sync">
             <button type="submit">Sync All Channels</button>
           </form>
@@ -173,7 +184,7 @@ export function createServer(
                 : pendingExport
                     .map(
                       (video) => `<tr>
-                        <td>${h(video.channel_handle ?? "")}</td>
+                        <td>${h(channelLabel(video.channel_handle))}</td>
                         <td>${h(video.title)}</td>
                         <td>${h(fmtDate(video.downloaded_at))}</td>
                         <td class="mono small">${h(video.local_path)}</td>
@@ -203,7 +214,7 @@ export function createServer(
             ${channels
               .map(
                 (channel) => `<tr>
-                <td><a href="/channels/${encodeURIComponent(channel.handle)}">@${h(channel.handle)}</a></td>
+                <td><a href="/channels/${encodeURIComponent(channel.handle)}">${h(channelLabel(channel.handle))}</a></td>
                 <td>${h(channel.known_videos)}</td>
                 <td>${h(channel.downloaded_videos)}</td>
                 <td>${h(channel.failed_videos)}</td>
@@ -235,7 +246,7 @@ export function createServer(
                 : cookieBlocked
                     .map(
                       (video) => `<tr>
-                        <td><a href="/channels/${encodeURIComponent(video.channel_handle)}">@${h(video.channel_handle)}</a></td>
+                        <td><a href="/channels/${encodeURIComponent(video.channel_handle)}">${h(channelLabel(video.channel_handle))}</a></td>
                         <td>${h(video.title)}</td>
                         <td><a href="https://www.youtube.com/watch?v=${h(video.youtube_video_id)}">${h(video.youtube_video_id)}</a></td>
                         <td class="small">${h(video.failure_message ?? "")}</td>
@@ -307,7 +318,7 @@ export function createServer(
             ${channels
               .map(
                 (channel) => `<tr>
-                <td><a href="/channels/${encodeURIComponent(channel.handle)}">@${h(channel.handle)}</a></td>
+                <td><a href="/channels/${encodeURIComponent(channel.handle)}">${h(channelLabel(channel.handle))}</a></td>
                 <td><a href="${h(channel.url)}">${h(channel.url)}</a></td>
                 <td>${h(channel.known_videos)}</td>
                 <td>${h(channel.downloaded_videos)}</td>
@@ -333,7 +344,7 @@ export function createServer(
     const videos = db.listChannelVideos(handle);
     const body = `
       <section class="hero">
-        <h1>@${h(channel.handle)}</h1>
+        <h1>${h(channelLabel(channel.handle))}</h1>
         <p>${h(channel.url)}</p>
         <div class="actions">
           <form method="post" action="/channels/${encodeURIComponent(channel.handle)}/sync">
@@ -447,7 +458,7 @@ export function createServer(
                 <td>${h(fmtDate(event.created_at))}</td>
                 <td><span class="${badgeClass(event.level)}">${h(event.level)}</span></td>
                 <td class="mono">${h(event.event_type)}</td>
-                <td>${h(event.channel_handle ?? "")}</td>
+                <td>${h(channelLabel(event.channel_handle))}</td>
                 <td>${h(event.message)}</td>
               </tr>`
               )
@@ -462,6 +473,12 @@ export function createServer(
   app.post("/sync", (_req, res) => {
     const started = syncService.startSyncAll();
     logger.info(started ? "manual sync-all triggered" : "sync-all request ignored because a run is active");
+    res.redirect("/");
+  });
+
+  app.post("/sync-and-export", (_req, res) => {
+    const started = syncService.startSyncAllAndExport();
+    logger.info(started ? "manual sync-and-export triggered" : "sync-and-export request ignored because a run is active");
     res.redirect("/");
   });
 

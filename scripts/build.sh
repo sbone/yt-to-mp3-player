@@ -9,9 +9,11 @@ if [ -z "$ASDF_BIN" ] && [ -x /opt/homebrew/bin/asdf ]; then
 fi
 
 if [ -n "$ASDF_BIN" ]; then
-  "$ASDF_BIN" exec node ./node_modules/tailwindcss/lib/cli.js -i ./src/web/static/input.css -o ./dist/public/app.css --minify
+  mkdir -p ./dist/public
+  cp ./src/web/static/app.css ./dist/public/app.css
   exec "$ASDF_BIN" exec node ./node_modules/typescript/bin/tsc -p tsconfig.json
 fi
 
-node ./node_modules/tailwindcss/lib/cli.js -i ./src/web/static/input.css -o ./dist/public/app.css --minify
+mkdir -p ./dist/public
+cp ./src/web/static/app.css ./dist/public/app.css
 exec node ./node_modules/typescript/bin/tsc -p tsconfig.json
