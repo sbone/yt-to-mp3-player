@@ -15,6 +15,8 @@ export const config = {
   host: process.env.HOST ?? "127.0.0.1",
   port: Number(process.env.PORT ?? 3000),
   minUploadDate: process.env.MIN_UPLOAD_DATE ?? "2026-01-01",
+  deviceMountPath: process.env.DEVICE_MOUNT_PATH?.trim() || null,
+  deviceVolumeName: process.env.DEVICE_VOLUME_NAME?.trim() || "AGP-A02T",
   channelListPath: resolve(rootDir, "channels.txt"),
   dbPath: resolve(dataDir, "app.db"),
   archivePath: resolve(dataDir, "archive.txt"),

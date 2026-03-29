@@ -4,11 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "build": "npm run build:css && tsc -p tsconfig.json",
+    "dev": "./scripts/dev.sh",
+    "build": "./scripts/build.sh",
     "build:css": "tailwindcss -i ./src/web/static/input.css -o ./dist/public/app.css --minify",
-    "check": "tsc --noEmit",
-    "start": "node dist/index.js"
+    "check": "./scripts/check.sh",
+    "doctor": "./scripts/doctor.sh",
+    "reconcile:device": "./scripts/reconcile-device.sh",
+    "rebuild:native": "./scripts/rebuild-native.sh",
+    "start": "./scripts/start.sh"
+  },
+  "engines": {
+    "node": "22.x"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

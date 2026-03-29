@@ -21,6 +21,7 @@ body {
     radial-gradient(circle at 90% 0%, #eaf5ff 0%, transparent 40%),
     var(--bg);
   font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  line-height: 1.45;
 }
 
 a {
@@ -44,6 +45,7 @@ a {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .brand {
@@ -65,7 +67,7 @@ a {
 .layout {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: clamp(0.65rem, 2vw, 1rem);
   display: grid;
   gap: 1rem;
 }
@@ -92,6 +94,36 @@ h2 {
 .actions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.inline-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+input[type="text"] {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.5rem 0.65rem;
+  min-width: 240px;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  border-radius: 8px;
+  border: 1px solid #2a2a2a;
+  background: #fff;
+  color: #2a2a2a;
+  padding: 0.55rem 0.85rem;
+  font-weight: 600;
 }
 
 button {
@@ -119,6 +151,8 @@ td {
   border-bottom: 1px solid #efede7;
   padding: 0.6rem 0.45rem;
   vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 th {
@@ -184,11 +218,73 @@ code {
 }
 
 @media (max-width: 860px) {
+  .topbar-inner {
+    align-items: flex-start;
+    padding: 0.75rem;
+  }
+
   .nav {
-    display: none;
+    width: 100%;
+    gap: 1rem;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .hero,
+  .card {
+    padding: 0.75rem;
+  }
+
+  .actions form,
+  .actions button,
+  .actions .button-link,
+  .actions input[type="text"] {
+    width: 100%;
   }
 
   table {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
     font-size: 0.9rem;
+  }
+
+  th,
+  td {
+    padding: 0.5rem 0.35rem;
+    white-space: normal;
+    max-width: 0;
+  }
+
+  .terminal {
+    min-height: 180px;
+    max-height: 300px;
+    font-size: 0.76rem;
+  }
+}
+
+@media (max-width: 520px) {
+  body {
+    font-size: 15px;
+  }
+
+  .brand {
+    font-size: 0.95rem;
+  }
+
+  h1 {
+    font-size: 1.35rem;
+  }
+
+  h2 {
+    font-size: 1.05rem;
+  }
+
+  .mono {
+    font-size: 0.72rem;
+  }
+
+  .small {
+    font-size: 0.76rem;
   }
 }

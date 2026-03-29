@@ -18,7 +18,15 @@ export interface VideoRecord {
   local_path: string | null;
   failure_message: string | null;
   downloaded_at: string | null;
+  exported_at: string | null;
   last_seen_at: string;
+}
+
+export interface DeviceSyncRecord {
+  id: number;
+  created_at: string;
+  note: string | null;
+  item_count: number;
 }
 
 export class AppDb {
@@ -58,8 +66,17 @@ export class AppDb {
         file_size_bytes integer,
         discovered_at text not null,
         downloaded_at text,
+        exported_at text,
+        exported_device_sync_id integer references device_syncs(id),
         last_seen_at text not null,
         failure_message text
+      );
+
+      create table if not exists device_syncs (
+        id integer primary key,
+        created_at text not null,
+        note text,
+        item_count integer not null default 0
       );
 
       create table if not exists sync_runs (
@@ -87,6 +104,16 @@ export class AppDb {
         created_at text not null
       );
     `);
+
+    // Cheap forward-compatible migration for earlier DBs.
+    const videoColumns = this.db.prepare(`pragma table_info(videos)`).all() as Array<{ name: string }>;
+    const columnNames = new Set(videoColumns.map((column) => column.name));
+    if (!columnNames.has("exported_at")) {
+      this.db.exec(`alter table videos add column exported_at text`);
+    }
+    if (!columnNames.has("exported_device_sync_id")) {
+      this.db.exec(`alter table videos add column exported_device_sync_id integer references device_syncs(id)`);
+    }
   }
 
   upsertChannel(handle: string, url: string): ChannelRecord {
@@ -305,7 +332,7 @@ export class AppDb {
   listChannelVideos(handle: string): VideoRecord[] {
     return this.db
       .prepare(
-        `select v.id, v.youtube_video_id, v.title, v.upload_date, v.status, v.local_path, v.failure_message, v.downloaded_at, v.last_seen_at
+        `select v.id, v.youtube_video_id, v.title, v.upload_date, v.status, v.local_path, v.failure_message, v.downloaded_at, v.exported_at, v.last_seen_at
          from videos v
          join channels c on c.id = v.channel_id
          where c.handle = ?
@@ -438,5 +465,96 @@ export class AppDb {
       created_at: string;
       channel_handle: string | null;
     }>;
+  }
+
+  getLatestDeviceSync(): DeviceSyncRecord | null {
+    return (
+      this.db
+        .prepare(
+          `select id, created_at, note, item_count
+           from device_syncs
+           order by id desc
+           limit 1`
+        )
+        .get() as DeviceSyncRecord | undefined
+    ) ?? null;
+  }
+
+  listPendingExportVideos(limit = 500): Array<{
+    id: number;
+    title: string;
+    local_path: string;
+    downloaded_at: string | null;
+    channel_handle: string | null;
+  }> {
+    return this.db
+      .prepare(
+        `select
+          v.id,
+          v.title,
+          v.local_path,
+          v.downloaded_at,
+          c.handle as channel_handle
+         from videos v
+         left join channels c on c.id = v.channel_id
+         where v.status = 'downloaded'
+           and v.local_path is not null
+           and v.exported_at is null
+         order by coalesce(v.downloaded_at, v.last_seen_at) asc
+         limit ?`
+      )
+      .all(limit) as Array<{
+      id: number;
+      title: string;
+      local_path: string;
+      downloaded_at: string | null;
+      channel_handle: string | null;
+    }>;
+  }
+
+  markVideosAsExported(videoIds: number[], note: string | null): { syncId: number | null; itemCount: number } {
+    if (videoIds.length === 0) {
+      return { syncId: null, itemCount: 0 };
+    }
+
+    const now = new Date().toISOString();
+
+    const insertSync = this.db.prepare(
+      `insert into device_syncs (created_at, note, item_count)
+      values (?, ?, ?)`
+    );
+    const updateVideo = this.db.prepare(
+      `update videos
+       set exported_at = ?, exported_device_sync_id = ?
+       where id = ?`
+    );
+
+    const tx = this.db.transaction(() => {
+      const syncInsert = insertSync.run(now, note, videoIds.length);
+      const syncId = Number(syncInsert.lastInsertRowid);
+      for (const videoId of videoIds) {
+        updateVideo.run(now, syncId, videoId);
+      }
+      return { syncId, itemCount: videoIds.length };
+    });
+
+    return tx();
+  }
+
+  markPendingAsExported(note: string | null): { syncId: number | null; itemCount: number } {
+    const pendingIds = this.db
+      .prepare(
+        `select id
+         from videos
+         where status = 'downloaded'
+           and local_path is not null
+           and exported_at is null`
+      )
+      .all() as Array<{ id: number }>;
+
+    return this.markVideosAsExported(
+      pendingIds.map((video) => video.id),
+      note
+    );
   }
 }

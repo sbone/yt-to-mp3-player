@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { config } from "../config.js";
 import { AppDb } from "../db.js";
+import { DeviceSyncService } from "../deviceSync.js";
 import { Logger } from "../logger.js";
 import { SyncService } from "../sync/syncService.js";
 import { fmtDate, h, page } from "./html.js";
@@ -81,7 +82,12 @@ function liveTerminalShell(): string {
   `;
 }
 
-export function createServer(db: AppDb, syncService: SyncService, logger: Logger): express.Express {
+export function createServer(
+  db: AppDb,
+  syncService: SyncService,
+  deviceSyncService: DeviceSyncService,
+  logger: Logger
+): express.Express {
   const app = express();
   app.use(express.urlencoded({ extended: false }));
 
@@ -93,6 +99,9 @@ export function createServer(db: AppDb, syncService: SyncService, logger: Logger
     const channels = db.listChannelsOverview();
     const runs = db.listRecentRuns(10);
     const cookieBlocked = db.listCookieBlockedVideos(50);
+    const latestDeviceSync = db.getLatestDeviceSync();
+    const pendingExport = db.listPendingExportVideos(400);
+    const deviceStatus = deviceSyncService.getStatus();
     const body = `
       <section class="hero">
         <h1>Channel Sync Dashboard</h1>
@@ -109,6 +118,72 @@ export function createServer(db: AppDb, syncService: SyncService, logger: Logger
       </section>
 
       ${syncStateBox(syncService)}
+
+      <section class="card">
+        <h2>MP3 Player Export</h2>
+        <p class="small">Pending tracks not yet exported: <strong>${pendingExport.length}</strong></p>
+        <p class="small">
+          Device status:
+          <strong>${deviceStatus.connected ? `connected (${h(deviceStatus.volumeName)})` : "not connected"}</strong>
+          ${deviceStatus.mountPath ? `at <code>${h(deviceStatus.mountPath)}</code>` : ""}
+        </p>
+        ${
+          deviceStatus.reason
+            ? `<p class="small">Detection note: ${h(deviceStatus.reason)}</p>`
+            : ""
+        }
+        <p class="small">
+          Last device update:
+          <strong>${latestDeviceSync ? h(fmtDate(latestDeviceSync.created_at)) : "never"}</strong>
+          ${latestDeviceSync ? `(tracks: ${h(latestDeviceSync.item_count)})` : ""}
+        </p>
+        ${
+          latestDeviceSync?.note
+            ? `<p class="small">Last note: ${h(latestDeviceSync.note)}</p>`
+            : ""
+        }
+        <div class="actions">
+          <form method="post" action="/device-sync/copy-pending" class="inline-form">
+            <input name="note" type="text" placeholder="Optional note (e.g. auto-copied to AGP-A02T)" />
+            <button type="submit" ${deviceStatus.connected ? "" : "disabled"}>Copy Pending To Player</button>
+          </form>
+          <form method="post" action="/device-sync/mark-pending" class="inline-form">
+            <input name="note" type="text" placeholder="Optional note (e.g. copied to SanDisk)" />
+            <button type="submit">Mark Pending As Exported</button>
+          </form>
+          <a class="button-link" href="/device-sync/pending-manifest.txt">Download Pending Manifest</a>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Pending Export Queue</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Channel</th>
+              <th>Title</th>
+              <th>Downloaded</th>
+              <th>Path</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              pendingExport.length === 0
+                ? `<tr><td colspan="4">No pending tracks.</td></tr>`
+                : pendingExport
+                    .map(
+                      (video) => `<tr>
+                        <td>${h(video.channel_handle ?? "")}</td>
+                        <td>${h(video.title)}</td>
+                        <td>${h(fmtDate(video.downloaded_at))}</td>
+                        <td class="mono small">${h(video.local_path)}</td>
+                      </tr>`
+                    )
+                    .join("")
+            }
+          </tbody>
+        </table>
+      </section>
 
       <section class="card">
         <h2>Channels</h2>
@@ -401,6 +476,59 @@ export function createServer(db: AppDb, syncService: SyncService, logger: Logger
     const started = syncService.startRetryCookieBlocked();
     logger.info(started ? "manual retry-cookie-errors triggered" : "retry-cookie-errors ignored because a run is active");
     res.redirect("/");
+  });
+
+  app.post("/device-sync/mark-pending", (req, res) => {
+    const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
+    const result = db.markPendingAsExported(note.length > 0 ? note : null);
+    logger.info(`device-sync mark-pending sync_id=${result.syncId ?? "none"} item_count=${result.itemCount}`);
+    res.redirect("/");
+  });
+
+  app.post("/device-sync/copy-pending", (req, res) => {
+    const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
+    const pending = db.listPendingExportVideos(5000);
+    const outcome = deviceSyncService.syncPending(pending);
+    const exportedIds = [...outcome.copied, ...outcome.alreadyPresent].map((item) => item.id);
+    const baseNote = note.length > 0 ? note : `auto-copied to ${outcome.device.volumeName ?? "device"}`;
+    const summary = `copied=${outcome.copied.length}, existing=${outcome.alreadyPresent.length}, missing=${outcome.missingSource.length}, failed=${outcome.failed.length}`;
+
+    if (!outcome.device.connected) {
+      logger.warn(`device-sync skipped: ${outcome.device.reason ?? "device not connected"}`);
+      res.redirect("/");
+      return;
+    }
+
+    const result = db.markVideosAsExported(exportedIds, `${baseNote}; ${summary}`);
+    logger.info(
+      `device-sync copy sync_id=${result.syncId ?? "none"} item_count=${result.itemCount} volume=${outcome.device.volumeName} ${summary}`
+    );
+    for (const item of outcome.missingSource) {
+      logger.warn(`device-sync missing-source video_id=${item.id} path=${item.local_path}`);
+    }
+    for (const failure of outcome.failed) {
+      logger.error(`device-sync failed video_id=${failure.item.id} path=${failure.item.local_path} error=${failure.message}`);
+    }
+    res.redirect("/");
+  });
+
+  app.get("/device-sync/pending-manifest.txt", (_req, res) => {
+    const pending = db.listPendingExportVideos(5000);
+    const lines = [
+      `# pending export manifest`,
+      `# generated_at: ${new Date().toISOString()}`,
+      `# count: ${pending.length}`,
+      ""
+    ];
+
+    for (const item of pending) {
+      lines.push(item.local_path);
+    }
+
+    const body = `${lines.join("\n")}\n`;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="pending-export-manifest.txt"`);
+    res.send(body);
   });
 
   app.get("/api/live", (_req, res) => {

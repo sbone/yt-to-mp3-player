@@ -11,11 +11,19 @@ Local, server-rendered TypeScript app that tracks YouTube channels and downloads
 ## Setup
 
 ```bash
-npm install
-npm run dev
+/opt/homebrew/bin/asdf exec npm install
+./scripts/dev.sh
 ```
 
 Open `http://127.0.0.1:3000`.
+
+Quick checks:
+
+```bash
+./scripts/doctor.sh
+./scripts/check.sh
+./scripts/reconcile-device.sh
+```
 
 ## Behavior
 
@@ -25,21 +33,42 @@ Open `http://127.0.0.1:3000`.
 - Sync is manual from the UI (`Sync All Channels` or per-channel sync).
 - Cookie/auth failures are tracked as `cookie_blocked` and listed on the dashboard.
 - Use `Retry Cookie-Blocked` in the dashboard after fixing cookies/auth.
+- Manual device workflow:
+  - Dashboard shows a `Pending Export Queue` (downloaded but not yet exported tracks).
+  - If your player is mounted on macOS, `Copy Pending To Player` copies queued MP3s onto the device automatically.
+  - The app preserves the source folder name on-device (for example `downloads/Wiztale/...` goes to `/Volumes/<device>/Wiztale/...`).
+- Existing files already present on the device are treated as exported so they leave the queue.
+- `./scripts/reconcile-device.sh` scans the mounted player and reports which pending tracks are already present.
+- `./scripts/reconcile-device.sh --apply` marks only high-confidence matches as exported without copying or deleting device files.
+- `Download Pending Manifest` is still available for drag/drop sessions.
+- `Mark Pending As Exported` still exists as a manual override.
 - State is stored in `data/app.db`.
 - Logs are written to `data/logs/app.log`.
 - Downloads go to `downloads/`.
 - `data/archive.txt` is used with `--download-archive` to avoid duplicate downloads.
+
+## Device detection
+
+- By default the app looks for a mounted volume named `AGP-A02T`.
+- If that does not match your player, set `DEVICE_VOLUME_NAME=YourVolumeName`.
+- To bypass auto-detection entirely, set `DEVICE_MOUNT_PATH=/Volumes/YourVolumeName`.
 
 The first sync also tries to map existing MP3s by channel/title heuristics so old files can be recognized.
 
 ## Build for production
 
 ```bash
-npm run build
-npm run start
+./scripts/build.sh
+./scripts/start.sh
 ```
 
 `build` compiles TypeScript and builds Tailwind CSS into `dist/public/app.css`.
+
+## Runtime note
+
+- This repo is pinned to `nodejs 22.14.0` in `.tool-versions`.
+- On this Mac, `/opt/homebrew/bin/node` is newer and can break the native `better-sqlite3` binding.
+- If that happens after reinstalling dependencies, run `./scripts/rebuild-native.sh`.
 
 ## Tailscale
 
