@@ -1,6 +1,7 @@
 import {
   accessSync,
-  copyFileSync,
+  createReadStream,
+  createWriteStream,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -10,6 +11,7 @@ import {
   constants as fsConstants
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { config } from "./config.js";
 
 export interface PendingExportItem {
@@ -34,6 +36,16 @@ export interface DeviceSyncOutcome {
   alreadyPresent: PendingExportItem[];
   missingSource: PendingExportItem[];
   failed: Array<{ item: PendingExportItem; message: string }>;
+}
+
+export interface DeviceSyncProgressSnapshot {
+  total: number;
+  processed: number;
+  copied: number;
+  failed: number;
+  remaining: number;
+  currentItem: PendingExportItem | null;
+  event: "copying" | "copied" | "already-present" | "missing-source" | "failed";
 }
 
 function isLikelyPlayerVolume(mountPath: string): boolean {
@@ -101,7 +113,10 @@ export class DeviceSyncService {
     };
   }
 
-  syncPending(items: PendingExportItem[]): DeviceSyncOutcome {
+  async syncPending(
+    items: PendingExportItem[],
+    onProgress?: (snapshot: DeviceSyncProgressSnapshot) => void
+  ): Promise<DeviceSyncOutcome> {
     const device = this.getStatus();
     const outcome: DeviceSyncOutcome = {
       device,
@@ -115,9 +130,24 @@ export class DeviceSyncService {
       return outcome;
     }
 
+    const emitProgress = (event: DeviceSyncProgressSnapshot["event"], currentItem: PendingExportItem | null): void => {
+      onProgress?.({
+        total: items.length,
+        processed:
+          outcome.copied.length + outcome.alreadyPresent.length + outcome.missingSource.length + outcome.failed.length,
+        copied: outcome.copied.length + outcome.alreadyPresent.length,
+        failed: outcome.failed.length,
+        remaining:
+          items.length - (outcome.copied.length + outcome.alreadyPresent.length + outcome.missingSource.length + outcome.failed.length),
+        currentItem,
+        event
+      });
+    };
+
     for (const item of items) {
       if (!existsSync(item.local_path)) {
         outcome.missingSource.push(item);
+        emitProgress("missing-source", item);
         continue;
       }
 
@@ -128,16 +158,18 @@ export class DeviceSyncService {
 
       try {
         mkdirSync(targetDir, { recursive: true });
+        emitProgress("copying", item);
         if (existsSync(targetPath)) {
           const sourceSize = statSync(item.local_path).size;
           const targetSize = statSync(targetPath).size;
           if (sourceSize === targetSize) {
             outcome.alreadyPresent.push(item);
+            emitProgress("already-present", item);
             continue;
           }
         }
         rmSync(tempTargetPath, { force: true });
-        copyFileSync(item.local_path, tempTargetPath);
+        await pipeline(createReadStream(item.local_path), createWriteStream(tempTargetPath));
         const sourceSize = statSync(item.local_path).size;
         const copiedSize = statSync(tempTargetPath).size;
         if (sourceSize !== copiedSize) {
@@ -145,12 +177,14 @@ export class DeviceSyncService {
         }
         renameSync(tempTargetPath, targetPath);
         outcome.copied.push(item);
+        emitProgress("copied", item);
       } catch (error) {
         rmSync(tempTargetPath, { force: true });
         outcome.failed.push({
           item,
           message: error instanceof Error ? error.message : String(error)
         });
+        emitProgress("failed", item);
       }
     }
 

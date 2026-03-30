@@ -27,6 +27,14 @@ interface PlayerSyncState {
   runId: number | null;
   targetVolume: string | null;
   note: string | null;
+  reconciled: number;
+  copied: number;
+  failed: number;
+  remaining: number;
+  currentItemTitle: string | null;
+  lastCompletedAt: string | null;
+  lastSummary: string | null;
+  lastFailedCount: number;
 }
 
 const ZERO_COUNTERS: SyncCounters = {
@@ -59,7 +67,15 @@ export class SyncService {
       startedAt: null,
       runId: null,
       targetVolume: null,
-      note: null
+      note: null,
+      reconciled: 0,
+      copied: 0,
+      failed: 0,
+      remaining: 0,
+      currentItemTitle: null,
+      lastCompletedAt: null,
+      lastSummary: null,
+      lastFailedCount: 0
     }
   };
 
@@ -326,40 +342,63 @@ export class SyncService {
       startedAt: new Date().toISOString(),
       runId,
       targetVolume: device.volumeName,
-      note
+      note,
+      reconciled: 0,
+      copied: 0,
+      failed: 0,
+      remaining: 0,
+      currentItemTitle: null,
+      lastSummary: null
     });
 
     this.logger.info(`run=${runId} player-sync started volume=${device.volumeName ?? "unknown"}`);
     this.db.addEvent(runId, "info", "player-sync-start", `player sync started for ${device.volumeName ?? device.mountPath}`);
 
     try {
-      this.exportPendingToDevice(runId, note);
-      this.db.finishRun(runId, { ...ZERO_COUNTERS }, "success", "player-sync");
+      const summary = await this.exportPendingToDevice(runId, note);
+      const status = this.state.player.lastFailedCount > 0 ? "partial" : "success";
+      this.db.finishRun(runId, { ...ZERO_COUNTERS }, status === "partial" ? "partial" : "success", "player-sync");
       this.db.addEvent(runId, "info", "player-sync-finish", "player sync finished");
       this.logger.info(`run=${runId} player-sync finished`);
+      this.setPlayerState({
+        lastCompletedAt: new Date().toISOString(),
+        lastSummary: summary,
+        currentItemTitle: null
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.db.finishRun(runId, { ...ZERO_COUNTERS }, "failed", "player-sync");
       this.db.addEvent(runId, "error", "player-sync-fatal", message);
       this.logger.error(`run=${runId} player-sync fatal error: ${message}`);
+      this.setPlayerState({
+        lastCompletedAt: new Date().toISOString(),
+        lastSummary: message,
+        lastFailedCount: Math.max(this.state.player.lastFailedCount, 1),
+        currentItemTitle: null
+      });
     } finally {
       this.setPlayerState({
         running: false,
         startedAt: null,
         runId: null,
         targetVolume: device.volumeName,
-        note: null
+        note: null,
+        currentItemTitle: null
       });
     }
   }
 
-  private exportPendingToDevice(runId: number, note: string | null = null): void {
+  private async exportPendingToDevice(runId: number, note: string | null = null): Promise<string> {
     const device = this.deviceSyncService.getStatus();
     if (!device.connected || !device.mountPath) {
       const message = `device export skipped: ${device.reason ?? "device not connected"}`;
       this.logger.warn(`run=${runId} ${message}`);
       this.db.addEvent(runId, "warn", "device-export-skipped", message);
-      return;
+      this.setPlayerState({
+        remaining: 0,
+        lastFailedCount: 0
+      });
+      return message;
     }
 
     const pendingBefore = this.db.listPendingExportVideos(5000);
@@ -384,20 +423,53 @@ export class SyncService {
     }
 
     const pendingAfterReconcile = this.db.listPendingExportVideos(5000);
+    this.setPlayerState({
+      reconciled: reconciledIds.length,
+      copied: 0,
+      failed: 0,
+      remaining: pendingAfterReconcile.length,
+      currentItemTitle: null,
+      lastFailedCount: 0
+    });
     if (pendingAfterReconcile.length === 0) {
       this.db.addEvent(runId, "info", "device-export-finish", "no pending tracks remained after reconciliation");
       this.logger.info(`run=${runId} device export finished with no remaining pending tracks`);
-      return;
+      return `reconciled=${reconciledIds.length}, copied=0, failed=0, remaining=0`;
     }
 
     if (!device.writable) {
       const message = `device export skipped copy because mount is read-only; remaining=${pendingAfterReconcile.length}`;
       this.logger.warn(`run=${runId} ${message}`);
       this.db.addEvent(runId, "warn", "device-export-read-only", message);
-      return;
+      this.setPlayerState({
+        failed: pendingAfterReconcile.length,
+        remaining: pendingAfterReconcile.length,
+        lastFailedCount: pendingAfterReconcile.length
+      });
+      return message;
     }
 
-    const copyOutcome = this.deviceSyncService.syncPending(pendingAfterReconcile);
+    const copyOutcome = await this.deviceSyncService.syncPending(pendingAfterReconcile, (progress) => {
+      this.setPlayerState({
+        copied: progress.copied,
+        failed: progress.failed,
+        remaining: progress.remaining,
+        currentItemTitle: progress.event === "copying" ? progress.currentItem?.title ?? null : null,
+        lastFailedCount: progress.failed
+      });
+      if (progress.event !== "copying" && progress.currentItem) {
+        const level = progress.event === "failed" ? "error" : progress.event === "missing-source" ? "warn" : "info";
+        const message =
+          progress.event === "copied"
+            ? `copied "${progress.currentItem.title}" (${progress.copied}/${progress.total})`
+            : progress.event === "already-present"
+              ? `confirmed "${progress.currentItem.title}" already on player`
+              : progress.event === "missing-source"
+                ? `source missing for "${progress.currentItem.title}"`
+                : `failed to copy "${progress.currentItem.title}"`;
+        this.db.addEvent(runId, level, `device-export-${progress.event}`, message);
+      }
+    });
     const exportedIds = [...copyOutcome.copied, ...copyOutcome.alreadyPresent].map((item) => item.id);
     if (exportedIds.length > 0) {
       this.db.markVideosAsExported(
@@ -421,6 +493,15 @@ export class SyncService {
     for (const failure of copyOutcome.failed) {
       this.logger.error(`run=${runId} device export failed path=${failure.item.local_path} error=${failure.message}`);
     }
+    const summary = `reconciled=${reconciledIds.length}, copied=${copyOutcome.copied.length + copyOutcome.alreadyPresent.length}, failed=${copyOutcome.failed.length}, remaining=${copyOutcome.failed.length + copyOutcome.missingSource.length}`;
+    this.setPlayerState({
+      copied: copyOutcome.copied.length + copyOutcome.alreadyPresent.length,
+      failed: copyOutcome.failed.length,
+      remaining: copyOutcome.failed.length + copyOutcome.missingSource.length,
+      currentItemTitle: null,
+      lastFailedCount: copyOutcome.failed.length
+    });
+    return summary;
   }
 
   private async syncChannel(

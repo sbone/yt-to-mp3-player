@@ -56,6 +56,8 @@ function syncStateBox(syncService: SyncService): string {
     <p class="mono">player run: ${h(state.player.runId ?? "n/a")}</p>
     <p class="mono">player volume: ${h(state.player.targetVolume ?? "n/a")}</p>
     <p class="mono">player started: ${h(fmtDate(state.player.startedAt))}</p>
+    <p class="mono">player progress: reconciled=${h(state.player.reconciled)} copied=${h(state.player.copied)} failed=${h(state.player.failed)} remaining=${h(state.player.remaining)}</p>
+    <p class="mono">player current: ${h(state.player.currentItemTitle ?? "idle")}</p>
   </div>`;
 }
 
@@ -80,6 +82,7 @@ function liveTerminalShell(): string {
             const lines = [];
             lines.push("[LIBRARY " + (state.library.running ? "RUNNING" : "IDLE") + "] run=" + (state.library.runId ?? "n/a") + " scope=" + (state.library.scope ?? "n/a") + " target=" + (state.library.targetHandle ?? "all"));
             lines.push("[PLAYER " + (state.player.running ? "RUNNING" : "IDLE") + "] run=" + (state.player.runId ?? "n/a") + " volume=" + (state.player.targetVolume ?? "n/a"));
+            lines.push("         reconciled=" + state.player.reconciled + " copied=" + state.player.copied + " failed=" + state.player.failed + " remaining=" + state.player.remaining + " current=" + (state.player.currentItemTitle ?? "idle"));
             lines.push("");
             for (const event of payload.events) {
               const channel = event.channel_handle ? " " + event.channel_handle : "";
@@ -130,6 +133,8 @@ export function createServer(
     const pendingExport = db.listPendingExportVideos(400);
     const deviceStatus = deviceSyncService.getStatus();
     const deviceReadyForExport = deviceStatus.connected && Boolean(deviceStatus.mountPath) && deviceStatus.writable;
+    const syncState = syncService.getState();
+    const safeToDisconnect = deviceStatus.connected && !syncState.player.running && syncState.player.remaining === 0 && syncState.player.lastFailedCount === 0;
     const body = `
       <section class="hero">
         <h1>Channel Sync Dashboard</h1>
@@ -154,11 +159,15 @@ export function createServer(
 
       <section class="card">
         <h2>MP3 Player Export</h2>
-        <p class="small">Pending tracks not yet exported: <strong>${pendingExport.length}</strong></p>
+        <p class="small">Tracks ready to copy now: <strong>${pendingExport.length}</strong></p>
         <p class="small">
           Device status:
           <strong>${deviceStatus.connected ? `connected (${h(deviceStatus.volumeName)})` : "not connected"}</strong>
           ${deviceStatus.mountPath ? `at <code>${h(deviceStatus.mountPath)}</code>` : ""}
+        </p>
+        <p class="small">
+          Disconnect status:
+          <strong>${safeToDisconnect ? "Safe to disconnect" : syncState.player.running ? "Do not disconnect during player sync" : "Not ready to disconnect"}</strong>
         </p>
         ${
           deviceStatus.reason
@@ -175,6 +184,19 @@ export function createServer(
             ? `<p class="small">Last note: ${h(latestDeviceSync.note)}</p>`
             : ""
         }
+        ${
+          syncState.player.lastSummary
+            ? `<p class="small">Last player sync summary: ${h(syncState.player.lastSummary)}</p>`
+            : ""
+        }
+        <p class="small">
+          Player sync:
+          <strong>reconciled=${h(syncState.player.reconciled)}</strong>,
+          <strong>copied=${h(syncState.player.copied)}</strong>,
+          <strong>failed=${h(syncState.player.failed)}</strong>,
+          <strong>remaining=${h(syncState.player.remaining)}</strong>
+          ${syncState.player.currentItemTitle ? `, current=${h(syncState.player.currentItemTitle)}` : ""}
+        </p>
         <div class="actions">
           <form method="post" action="/device-sync/sync-player" class="inline-form">
             <input name="note" type="text" placeholder="Optional note (e.g. auto-copied to AGP-A02T)" />
@@ -190,6 +212,7 @@ export function createServer(
 
       <section class="card">
         <h2>Pending Export Queue</h2>
+        <p class="small">Newest local-only tracks are listed first so the player gets fresh audio before older backlog.</p>
         <table>
           <thead>
             <tr>
