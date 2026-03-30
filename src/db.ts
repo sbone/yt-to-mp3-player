@@ -317,6 +317,9 @@ export class AppDb {
           c.last_error_at,
           count(v.id) as known_videos,
           sum(case when v.status = 'downloaded' then 1 else 0 end) as downloaded_videos,
+          sum(case when v.status = 'downloaded' and v.exported_at is not null then 1 else 0 end) as on_player_videos,
+          sum(case when v.status = 'downloaded' and v.exported_at is null then 1 else 0 end) as local_only_videos,
+          sum(case when v.status = 'downloaded' and v.exported_at is null then 1 else 0 end) as needs_sync_videos,
           sum(case when v.status = 'failed' then 1 else 0 end) as failed_videos,
           sum(case when v.status = 'cookie_blocked' then 1 else 0 end) as cookie_blocked_videos,
           max(v.upload_date) as newest_upload
@@ -500,7 +503,7 @@ export class AppDb {
          where v.status = 'downloaded'
            and v.local_path is not null
            and v.exported_at is null
-         order by coalesce(v.downloaded_at, v.last_seen_at) asc
+         order by coalesce(v.downloaded_at, v.last_seen_at) desc, v.id desc
          limit ?`
       )
       .all(limit) as Array<{

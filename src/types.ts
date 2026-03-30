@@ -51,6 +51,9 @@ export interface ChannelOverview {
   last_error_at: string | null;
   known_videos: number;
   downloaded_videos: number;
+  on_player_videos: number;
+  local_only_videos: number;
+  needs_sync_videos: number;
   failed_videos: number;
   cookie_blocked_videos: number;
   newest_upload: string | null;

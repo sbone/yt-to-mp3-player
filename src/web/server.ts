@@ -25,6 +25,22 @@ function channelLabel(handle: string | null | undefined): string {
   return handle.startsWith("playlist:") ? handle : `@${handle}`;
 }
 
+function deviceStateBadge(video: { status: string; exported_at?: string | null }): string {
+  if (video.status === "downloaded" && video.exported_at) {
+    return `<span class="${badgeClass("success")}">On player</span>`;
+  }
+  if (video.status === "downloaded") {
+    return `<span class="${badgeClass("running")}">Local only</span>`;
+  }
+  if (video.status === "failed") {
+    return `<span class="${badgeClass("failed")}">Failed</span>`;
+  }
+  if (video.status === "cookie_blocked") {
+    return `<span class="${badgeClass("warn")}">Cookie blocked</span>`;
+  }
+  return `<span class="${badgeClass("discovered")}">Not downloaded</span>`;
+}
+
 function syncStateBox(syncService: SyncService): string {
   const state = syncService.getState();
   if (!state.library.running && !state.player.running) {
@@ -209,7 +225,9 @@ export function createServer(
             <tr>
               <th>Handle</th>
               <th>Known</th>
-              <th>Downloaded</th>
+              <th>On Player</th>
+              <th>Local Only</th>
+              <th>Needs Sync</th>
               <th>Failed</th>
               <th>Cookie blocked</th>
               <th>Newest upload</th>
@@ -222,7 +240,9 @@ export function createServer(
                 (channel) => `<tr>
                 <td><a href="/channels/${encodeURIComponent(channel.handle)}">${h(channelLabel(channel.handle))}</a></td>
                 <td>${h(channel.known_videos)}</td>
-                <td>${h(channel.downloaded_videos)}</td>
+                <td>${h(channel.on_player_videos)}</td>
+                <td>${h(channel.local_only_videos)}</td>
+                <td>${h(channel.needs_sync_videos)}</td>
                 <td>${h(channel.failed_videos)}</td>
                 <td>${h(channel.cookie_blocked_videos)}</td>
                 <td>${h(channel.newest_upload ?? "n/a")}</td>
@@ -315,7 +335,9 @@ export function createServer(
               <th>Handle</th>
               <th>URL</th>
               <th>Known videos</th>
-              <th>Downloaded</th>
+              <th>On Player</th>
+              <th>Local Only</th>
+              <th>Needs Sync</th>
               <th>Cookie blocked</th>
               <th>Last success</th>
             </tr>
@@ -327,7 +349,9 @@ export function createServer(
                 <td><a href="/channels/${encodeURIComponent(channel.handle)}">${h(channelLabel(channel.handle))}</a></td>
                 <td><a href="${h(channel.url)}">${h(channel.url)}</a></td>
                 <td>${h(channel.known_videos)}</td>
-                <td>${h(channel.downloaded_videos)}</td>
+                <td>${h(channel.on_player_videos)}</td>
+                <td>${h(channel.local_only_videos)}</td>
+                <td>${h(channel.needs_sync_videos)}</td>
                 <td>${h(channel.cookie_blocked_videos)}</td>
                 <td>${h(fmtDate(channel.last_success_at))}</td>
               </tr>`
@@ -365,6 +389,8 @@ export function createServer(
               <th>Title</th>
               <th>Upload</th>
               <th>Status</th>
+              <th>Device State</th>
+              <th>Exported</th>
               <th>Local path</th>
               <th>Error</th>
             </tr>
@@ -376,6 +402,8 @@ export function createServer(
                 <td><a href="https://www.youtube.com/watch?v=${h(video.youtube_video_id)}">${h(video.title)}</a></td>
                 <td>${h(video.upload_date ?? "n/a")}</td>
                 <td><span class="${badgeClass(video.status)}">${h(video.status)}</span></td>
+                <td>${deviceStateBadge(video)}</td>
+                <td>${h(fmtDate(video.exported_at))}</td>
                 <td class="mono small">${h(video.local_path ?? "")}</td>
                 <td class="small">${h(video.failure_message ?? "")}</td>
               </tr>`
