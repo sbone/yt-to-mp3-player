@@ -155,7 +155,7 @@ export class AppDb {
       .run(now, now, now, channelId);
   }
 
-  createRun(scope: "all" | "single-channel", channelId: number | null): number {
+  createRun(scope: string, channelId: number | null): number {
     const now = new Date().toISOString();
     const result = this.db
       .prepare(

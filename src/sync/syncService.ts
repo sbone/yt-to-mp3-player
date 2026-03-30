@@ -9,12 +9,24 @@ import { ExistingDownloadIndex } from "./fileIndex.js";
 import { config } from "../config.js";
 
 interface SyncState {
+  library: LibrarySyncState;
+  player: PlayerSyncState;
+}
+
+interface LibrarySyncState {
   running: boolean;
   startedAt: string | null;
   runId: number | null;
   scope: "all" | "single-channel" | null;
   targetHandle: string | null;
-  exportAfterSync: boolean;
+}
+
+interface PlayerSyncState {
+  running: boolean;
+  startedAt: string | null;
+  runId: number | null;
+  targetVolume: string | null;
+  note: string | null;
 }
 
 const ZERO_COUNTERS: SyncCounters = {
@@ -35,12 +47,20 @@ function nextCounters(base: SyncCounters, delta: Partial<SyncCounters>): SyncCou
 
 export class SyncService {
   private state: SyncState = {
-    running: false,
-    startedAt: null,
-    runId: null,
-    scope: null,
-    targetHandle: null,
-    exportAfterSync: false
+    library: {
+      running: false,
+      startedAt: null,
+      runId: null,
+      scope: null,
+      targetHandle: null
+    },
+    player: {
+      running: false,
+      startedAt: null,
+      runId: null,
+      targetVolume: null,
+      note: null
+    }
   };
 
   constructor(
@@ -50,31 +70,28 @@ export class SyncService {
   ) {}
 
   getState(): SyncState {
-    return { ...this.state };
+    return {
+      library: { ...this.state.library },
+      player: { ...this.state.player }
+    };
   }
 
   startSyncAll(): boolean {
-    if (this.state.running) {
+    if (this.state.library.running) {
       return false;
     }
-    void this.syncAll(false);
+    void this.syncAll();
     return true;
   }
 
-  startSyncAllAndExport(): boolean {
-    if (this.state.running) {
-      return false;
-    }
-    const device = this.deviceSyncService.getStatus();
-    if (!device.connected || !device.mountPath || !device.writable) {
-      return false;
-    }
-    void this.syncAll(true);
-    return true;
+  startSyncAllAndExport(note: string | null = null): { libraryStarted: boolean; playerStarted: boolean } {
+    const libraryStarted = this.startSyncAll();
+    const playerStarted = this.startPlayerSync(note);
+    return { libraryStarted, playerStarted };
   }
 
   startSyncChannel(handle: string): boolean {
-    if (this.state.running) {
+    if (this.state.library.running) {
       return false;
     }
     void this.syncSingleChannel(handle);
@@ -82,29 +99,50 @@ export class SyncService {
   }
 
   startRetryCookieBlocked(): boolean {
-    if (this.state.running) {
+    if (this.state.library.running) {
       return false;
     }
     void this.retryCookieBlockedVideos();
     return true;
   }
 
-  private setState(next: Partial<SyncState>): void {
-    this.state = { ...this.state, ...next };
+  startPlayerSync(note: string | null = null): boolean {
+    if (this.state.player.running) {
+      return false;
+    }
+    const device = this.deviceSyncService.getStatus();
+    if (!device.connected || !device.mountPath || !device.writable) {
+      return false;
+    }
+    void this.syncPlayer(note);
+    return true;
   }
 
-  private async syncAll(exportAfterSync: boolean): Promise<void> {
+  private setLibraryState(next: Partial<LibrarySyncState>): void {
+    this.state = {
+      ...this.state,
+      library: { ...this.state.library, ...next }
+    };
+  }
+
+  private setPlayerState(next: Partial<PlayerSyncState>): void {
+    this.state = {
+      ...this.state,
+      player: { ...this.state.player, ...next }
+    };
+  }
+
+  private async syncAll(): Promise<void> {
     const sources = loadChannelSources();
     const channels = sources.map((source) => this.db.upsertChannel(source.key, source.url));
     const runId = this.db.createRun("all", null);
 
-    this.setState({
+    this.setLibraryState({
       running: true,
       startedAt: new Date().toISOString(),
       runId,
       scope: "all",
-      targetHandle: exportAfterSync ? "device-export" : null,
-      exportAfterSync
+      targetHandle: null
     });
 
     let totals = { ...ZERO_COUNTERS };
@@ -124,9 +162,6 @@ export class SyncService {
       if (totals.downloaded === 0 && totals.failed > 0 && totals.discovered === 0) {
         status = "failed";
       }
-      if (exportAfterSync) {
-        this.exportPendingToDevice(runId);
-      }
     } catch (error) {
       status = "failed";
       const message = error instanceof Error ? error.message : String(error);
@@ -141,13 +176,12 @@ export class SyncService {
         `run completed status=${status} discovered=${totals.discovered} downloaded=${totals.downloaded} skipped=${totals.skipped} failed=${totals.failed}`
       );
       this.logger.info(`run=${runId} sync-all finished status=${status}`);
-      this.setState({
+      this.setLibraryState({
         running: false,
         startedAt: null,
         runId: null,
         scope: null,
-        targetHandle: null,
-        exportAfterSync: false
+        targetHandle: null
       });
     }
   }
@@ -157,13 +191,12 @@ export class SyncService {
     const runId = this.db.createRun("single-channel", channel.id);
     const index = new ExistingDownloadIndex(config.downloadsDir);
 
-    this.setState({
+    this.setLibraryState({
       running: true,
       startedAt: new Date().toISOString(),
       runId,
       scope: "single-channel",
-      targetHandle: handle,
-      exportAfterSync: false
+      targetHandle: handle
     });
 
     this.logger.info(`run=${runId} sync-channel started handle=${handle}`);
@@ -186,26 +219,24 @@ export class SyncService {
       this.db.finishRun(runId, counters, status);
       this.db.addEvent(runId, "info", "run-finish", `run completed status=${status}`, channel.id);
       this.logger.info(`run=${runId} sync-channel finished handle=${handle} status=${status}`);
-      this.setState({
+      this.setLibraryState({
         running: false,
         startedAt: null,
         runId: null,
         scope: null,
-        targetHandle: null,
-        exportAfterSync: false
+        targetHandle: null
       });
     }
   }
 
   private async retryCookieBlockedVideos(): Promise<void> {
     const runId = this.db.createRun("all", null);
-    this.setState({
+    this.setLibraryState({
       running: true,
       startedAt: new Date().toISOString(),
       runId,
       scope: "all",
-      targetHandle: "cookie-blocked",
-      exportAfterSync: false
+      targetHandle: "cookie-blocked"
     });
 
     let counters = { ...ZERO_COUNTERS };
@@ -273,18 +304,56 @@ export class SyncService {
       this.db.finishRun(runId, counters, status, "retry-cookie-blocked");
       this.db.addEvent(runId, "info", "retry-cookie-finish", `retry finished status=${status}`);
       this.logger.info(`run=${runId} retry-cookie-blocked finished status=${status}`);
-      this.setState({
+      this.setLibraryState({
         running: false,
         startedAt: null,
         runId: null,
         scope: null,
-        targetHandle: null,
-        exportAfterSync: false
+        targetHandle: null
       });
     }
   }
 
-  private exportPendingToDevice(runId: number): void {
+  private async syncPlayer(note: string | null): Promise<void> {
+    const device = this.deviceSyncService.getStatus();
+    if (!device.connected || !device.mountPath || !device.writable) {
+      return;
+    }
+
+    const runId = this.db.createRun("player-sync", null);
+    this.setPlayerState({
+      running: true,
+      startedAt: new Date().toISOString(),
+      runId,
+      targetVolume: device.volumeName,
+      note
+    });
+
+    this.logger.info(`run=${runId} player-sync started volume=${device.volumeName ?? "unknown"}`);
+    this.db.addEvent(runId, "info", "player-sync-start", `player sync started for ${device.volumeName ?? device.mountPath}`);
+
+    try {
+      this.exportPendingToDevice(runId, note);
+      this.db.finishRun(runId, { ...ZERO_COUNTERS }, "success", "player-sync");
+      this.db.addEvent(runId, "info", "player-sync-finish", "player sync finished");
+      this.logger.info(`run=${runId} player-sync finished`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.db.finishRun(runId, { ...ZERO_COUNTERS }, "failed", "player-sync");
+      this.db.addEvent(runId, "error", "player-sync-fatal", message);
+      this.logger.error(`run=${runId} player-sync fatal error: ${message}`);
+    } finally {
+      this.setPlayerState({
+        running: false,
+        startedAt: null,
+        runId: null,
+        targetVolume: device.volumeName,
+        note: null
+      });
+    }
+  }
+
+  private exportPendingToDevice(runId: number, note: string | null = null): void {
     const device = this.deviceSyncService.getStatus();
     if (!device.connected || !device.mountPath) {
       const message = `device export skipped: ${device.reason ?? "device not connected"}`;
@@ -333,7 +402,7 @@ export class SyncService {
     if (exportedIds.length > 0) {
       this.db.markVideosAsExported(
         exportedIds,
-        `auto copy; copied=${copyOutcome.copied.length}, existing=${copyOutcome.alreadyPresent.length}, missing=${copyOutcome.missingSource.length}, failed=${copyOutcome.failed.length}`
+        `${note?.trim() ? `${note.trim()}; ` : ""}auto copy; copied=${copyOutcome.copied.length}, existing=${copyOutcome.alreadyPresent.length}, missing=${copyOutcome.missingSource.length}, failed=${copyOutcome.failed.length}`
       );
     }
 

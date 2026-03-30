@@ -27,15 +27,19 @@ function channelLabel(handle: string | null | undefined): string {
 
 function syncStateBox(syncService: SyncService): string {
   const state = syncService.getState();
-  if (!state.running) {
-    return `<div class="card"><p class="mono">status: idle</p></div>`;
+  if (!state.library.running && !state.player.running) {
+    return `<div class="card"><p class="mono">library: idle</p><p class="mono">player: idle</p></div>`;
   }
   return `<div class="card">
-    <p class="mono">status: running</p>
-    <p class="mono">run: ${h(state.runId)}</p>
-    <p class="mono">scope: ${h(state.scope)}</p>
-    <p class="mono">target: ${h(state.targetHandle ?? "all channels")}</p>
-    <p class="mono">started: ${h(fmtDate(state.startedAt))}</p>
+    <p class="mono">library: ${state.library.running ? "running" : "idle"}</p>
+    <p class="mono">library run: ${h(state.library.runId ?? "n/a")}</p>
+    <p class="mono">library scope: ${h(state.library.scope ?? "n/a")}</p>
+    <p class="mono">library target: ${h(state.library.targetHandle ?? "all channels")}</p>
+    <p class="mono">library started: ${h(fmtDate(state.library.startedAt))}</p>
+    <p class="mono">player: ${state.player.running ? "running" : "idle"}</p>
+    <p class="mono">player run: ${h(state.player.runId ?? "n/a")}</p>
+    <p class="mono">player volume: ${h(state.player.targetVolume ?? "n/a")}</p>
+    <p class="mono">player started: ${h(fmtDate(state.player.startedAt))}</p>
   </div>`;
 }
 
@@ -58,9 +62,8 @@ function liveTerminalShell(): string {
           const render = (payload) => {
             const state = payload.state;
             const lines = [];
-            lines.push(state.running
-              ? "[RUNNING] run=" + (state.runId ?? "n/a") + " scope=" + (state.scope ?? "n/a") + " target=" + (state.targetHandle ?? "all")
-              : "[IDLE] no active sync run");
+            lines.push("[LIBRARY " + (state.library.running ? "RUNNING" : "IDLE") + "] run=" + (state.library.runId ?? "n/a") + " scope=" + (state.library.scope ?? "n/a") + " target=" + (state.library.targetHandle ?? "all"));
+            lines.push("[PLAYER " + (state.player.running ? "RUNNING" : "IDLE") + "] run=" + (state.player.runId ?? "n/a") + " volume=" + (state.player.targetVolume ?? "n/a"));
             lines.push("");
             for (const event of payload.events) {
               const channel = event.channel_handle ? " " + event.channel_handle : "";
@@ -116,11 +119,14 @@ export function createServer(
         <h1>Channel Sync Dashboard</h1>
         <p>Server-rendered status page for yt-dlp channel tracking.</p>
         <div class="actions">
-          <form method="post" action="/sync-and-export">
-            <button type="submit" ${deviceReadyForExport ? "" : "disabled"}>Sync + Export To Player</button>
-          </form>
           <form method="post" action="/sync">
-            <button type="submit">Sync All Channels</button>
+            <button type="submit">Refresh Library</button>
+          </form>
+          <form method="post" action="/device-sync/sync-player">
+            <button type="submit" ${deviceReadyForExport ? "" : "disabled"}>Sync Player</button>
+          </form>
+          <form method="post" action="/sync-and-export">
+            <button type="submit" ${deviceReadyForExport ? "" : "disabled"}>Refresh Library + Sync Player</button>
           </form>
           <form method="post" action="/retry/cookie-errors">
             <button type="submit">Retry Cookie-Blocked (${cookieBlocked.length})</button>
@@ -154,9 +160,9 @@ export function createServer(
             : ""
         }
         <div class="actions">
-          <form method="post" action="/device-sync/copy-pending" class="inline-form">
+          <form method="post" action="/device-sync/sync-player" class="inline-form">
             <input name="note" type="text" placeholder="Optional note (e.g. auto-copied to AGP-A02T)" />
-            <button type="submit" ${deviceReadyForExport ? "" : "disabled"}>Copy Pending To Player</button>
+            <button type="submit" ${deviceReadyForExport ? "" : "disabled"}>Sync Player Now</button>
           </form>
           <form method="post" action="/device-sync/mark-pending" class="inline-form">
             <input name="note" type="text" placeholder="Optional note (e.g. copied to SanDisk)" />
@@ -479,12 +485,23 @@ export function createServer(
   app.post("/sync-and-export", (_req, res) => {
     const deviceStatus = deviceSyncService.getStatus();
     const deviceReadyForExport = deviceStatus.connected && Boolean(deviceStatus.mountPath) && deviceStatus.writable;
-    const started = deviceReadyForExport && syncService.startSyncAllAndExport();
+    const result = deviceReadyForExport ? syncService.startSyncAllAndExport() : { libraryStarted: false, playerStarted: false };
     if (!deviceReadyForExport) {
       logger.warn(`sync-and-export blocked: ${deviceStatus.reason ?? "device is not writable"}`);
     } else {
-      logger.info(started ? "manual sync-and-export triggered" : "sync-and-export request ignored because a run is active");
+      logger.info(
+        result.libraryStarted || result.playerStarted
+          ? `manual sync-and-export triggered library=${result.libraryStarted} player=${result.playerStarted}`
+          : "sync-and-export request ignored because no operation could start"
+      );
     }
+    res.redirect("/");
+  });
+
+  app.post("/device-sync/sync-player", (req, res) => {
+    const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
+    const started = syncService.startPlayerSync(note.length > 0 ? note : null);
+    logger.info(started ? "manual player-sync triggered" : "player-sync request ignored");
     res.redirect("/");
   });
 
@@ -505,33 +522,6 @@ export function createServer(
     const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
     const result = db.markPendingAsExported(note.length > 0 ? note : null);
     logger.info(`device-sync mark-pending sync_id=${result.syncId ?? "none"} item_count=${result.itemCount}`);
-    res.redirect("/");
-  });
-
-  app.post("/device-sync/copy-pending", (req, res) => {
-    const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
-    const pending = db.listPendingExportVideos(5000);
-    const outcome = deviceSyncService.syncPending(pending);
-    const exportedIds = [...outcome.copied, ...outcome.alreadyPresent].map((item) => item.id);
-    const baseNote = note.length > 0 ? note : `auto-copied to ${outcome.device.volumeName ?? "device"}`;
-    const summary = `copied=${outcome.copied.length}, existing=${outcome.alreadyPresent.length}, missing=${outcome.missingSource.length}, failed=${outcome.failed.length}`;
-
-    if (!outcome.device.connected) {
-      logger.warn(`device-sync skipped: ${outcome.device.reason ?? "device not connected"}`);
-      res.redirect("/");
-      return;
-    }
-
-    const result = db.markVideosAsExported(exportedIds, `${baseNote}; ${summary}`);
-    logger.info(
-      `device-sync copy sync_id=${result.syncId ?? "none"} item_count=${result.itemCount} volume=${outcome.device.volumeName} ${summary}`
-    );
-    for (const item of outcome.missingSource) {
-      logger.warn(`device-sync missing-source video_id=${item.id} path=${item.local_path}`);
-    }
-    for (const failure of outcome.failed) {
-      logger.error(`device-sync failed video_id=${failure.item.id} path=${failure.item.local_path} error=${failure.message}`);
-    }
     res.redirect("/");
   });
 
