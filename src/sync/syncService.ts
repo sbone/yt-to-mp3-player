@@ -511,6 +511,7 @@ export class SyncService {
   ): Promise<{ ok: boolean; counters: SyncCounters }> {
     let counters = { ...ZERO_COUNTERS };
     let ok = true;
+    let knownVideoStreak = 0;
     this.db.addEvent(runId, "info", "channel-start", `checking channel ${channel.handle}`, channel.id);
     this.logger.info(`run=${runId} channel=${channel.handle} checking`);
 
@@ -528,6 +529,22 @@ export class SyncService {
         const upsert = this.db.upsertDiscoveredVideo(channel.id, item);
         if (upsert.isNew) {
           counters = nextCounters(counters, { discovered: 1 });
+          knownVideoStreak = 0;
+        } else {
+          knownVideoStreak += 1;
+          if (knownVideoStreak >= config.knownVideoStreakCutoff) {
+            this.db.addEvent(
+              runId,
+              "info",
+              "channel-cutoff",
+              `stopped after ${knownVideoStreak} consecutive known videos`,
+              channel.id
+            );
+            this.logger.info(
+              `run=${runId} channel=${channel.handle} reached known-video cutoff streak=${knownVideoStreak}`
+            );
+            break;
+          }
         }
 
         if (upsert.status === "downloaded" || upsert.status === "cookie_blocked") {
