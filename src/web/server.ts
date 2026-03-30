@@ -114,7 +114,6 @@ export function createServer(
       <section class="hero">
         <h1>Channel Sync Dashboard</h1>
         <p>Server-rendered status page for yt-dlp channel tracking.</p>
-        <p class="small">Download cutoff: videos uploaded on or after ${h(config.minUploadDate)}.</p>
         <div class="actions">
           <form method="post" action="/sync-and-export">
             <button type="submit" ${deviceStatus.connected ? "" : "disabled"}>Sync + Export To Player</button>

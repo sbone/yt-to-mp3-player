@@ -56,15 +56,9 @@ interface ChannelJsonResponse {
   entries?: ChannelJsonEntry[];
 }
 
-function cutoffForYtDlp(minUploadDate: string): string {
-  return minUploadDate.replaceAll("-", "");
-}
-
-export async function discoverChannel(channelUrl: string, minUploadDate: string): Promise<DiscoveredVideo[]> {
+export async function discoverChannel(channelUrl: string): Promise<DiscoveredVideo[]> {
   const { stdout } = await runCommand([
     "--flat-playlist",
-    "--dateafter",
-    cutoffForYtDlp(minUploadDate),
     "--dump-single-json",
     channelUrl
   ]);
@@ -98,9 +92,6 @@ export async function discoverChannel(channelUrl: string, minUploadDate: string)
 
 function inferSkipReason(output: string): string {
   const lower = output.toLowerCase();
-  if (lower.includes("does not pass filter")) {
-    return "Skipped by yt-dlp filter (likely upload date cutoff).";
-  }
   if (lower.includes("has already been downloaded")) {
     return "Skipped by yt-dlp archive (already downloaded).";
   }
@@ -129,8 +120,6 @@ export async function downloadVideo(videoId: string): Promise<DownloadOutcome> {
     "ffmpeg:-id3v2_version 3",
     "--download-archive",
     config.archivePath,
-    "--dateafter",
-    cutoffForYtDlp(config.minUploadDate),
     "--write-info-json",
     "--print",
     "after_move:filepath",

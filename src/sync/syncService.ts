@@ -24,13 +24,6 @@ const ZERO_COUNTERS: SyncCounters = {
   failed: 0
 };
 
-function isKnownBeforeCutoff(uploadDate: string | null): boolean {
-  if (!uploadDate) {
-    return false;
-  }
-  return uploadDate < config.minUploadDate;
-}
-
 function nextCounters(base: SyncCounters, delta: Partial<SyncCounters>): SyncCounters {
   return {
     discovered: base.discovered + (delta.discovered ?? 0),
@@ -219,23 +212,6 @@ export class SyncService {
 
     try {
       for (const video of blockedVideos) {
-        if (isKnownBeforeCutoff(video.upload_date)) {
-          this.db.markVideoSkipped(
-            video.id,
-            `Skipped by cutoff date: upload_date=${video.upload_date ?? "unknown"} < ${config.minUploadDate}`
-          );
-          this.db.addEvent(
-            runId,
-            "info",
-            "retry-cookie-skipped-cutoff",
-            `skipped "${video.title}" because upload_date is before ${config.minUploadDate}`,
-            video.channel_id,
-            video.id
-          );
-          counters = nextCounters(counters, { skipped: 1 });
-          continue;
-        }
-
         try {
           const result = await downloadVideo(video.youtube_video_id);
           if (result.status === "downloaded") {
@@ -385,13 +361,12 @@ export class SyncService {
     this.logger.info(`run=${runId} channel=${channel.handle} checking`);
 
     try {
-      // Date cutoff is enforced by yt-dlp via --dateafter during discovery.
-      const discovered = await discoverChannel(channel.url, config.minUploadDate);
+      const discovered = await discoverChannel(channel.url);
       this.db.addEvent(
         runId,
         "info",
         "channel-discovered",
-        `found ${discovered.length} videos in feed (date cutoff >= ${config.minUploadDate})`,
+        `found ${discovered.length} videos in feed`,
         channel.id
       );
 
