@@ -113,7 +113,7 @@ export async function downloadVideo(videoId: string): Promise<DownloadOutcome> {
     "--audio-format",
     "mp3",
     "--audio-quality",
-    "0",
+    "128K",
     "--embed-thumbnail",
     "--add-metadata",
     "--postprocessor-args",
