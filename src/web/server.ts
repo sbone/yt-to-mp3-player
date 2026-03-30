@@ -110,13 +110,14 @@ export function createServer(
     const latestDeviceSync = db.getLatestDeviceSync();
     const pendingExport = db.listPendingExportVideos(400);
     const deviceStatus = deviceSyncService.getStatus();
+    const deviceReadyForExport = deviceStatus.connected && Boolean(deviceStatus.mountPath) && deviceStatus.writable;
     const body = `
       <section class="hero">
         <h1>Channel Sync Dashboard</h1>
         <p>Server-rendered status page for yt-dlp channel tracking.</p>
         <div class="actions">
           <form method="post" action="/sync-and-export">
-            <button type="submit" ${deviceStatus.connected ? "" : "disabled"}>Sync + Export To Player</button>
+            <button type="submit" ${deviceReadyForExport ? "" : "disabled"}>Sync + Export To Player</button>
           </form>
           <form method="post" action="/sync">
             <button type="submit">Sync All Channels</button>
@@ -155,7 +156,7 @@ export function createServer(
         <div class="actions">
           <form method="post" action="/device-sync/copy-pending" class="inline-form">
             <input name="note" type="text" placeholder="Optional note (e.g. auto-copied to AGP-A02T)" />
-            <button type="submit" ${deviceStatus.connected ? "" : "disabled"}>Copy Pending To Player</button>
+            <button type="submit" ${deviceReadyForExport ? "" : "disabled"}>Copy Pending To Player</button>
           </form>
           <form method="post" action="/device-sync/mark-pending" class="inline-form">
             <input name="note" type="text" placeholder="Optional note (e.g. copied to SanDisk)" />
@@ -476,8 +477,14 @@ export function createServer(
   });
 
   app.post("/sync-and-export", (_req, res) => {
-    const started = syncService.startSyncAllAndExport();
-    logger.info(started ? "manual sync-and-export triggered" : "sync-and-export request ignored because a run is active");
+    const deviceStatus = deviceSyncService.getStatus();
+    const deviceReadyForExport = deviceStatus.connected && Boolean(deviceStatus.mountPath) && deviceStatus.writable;
+    const started = deviceReadyForExport && syncService.startSyncAllAndExport();
+    if (!deviceReadyForExport) {
+      logger.warn(`sync-and-export blocked: ${deviceStatus.reason ?? "device is not writable"}`);
+    } else {
+      logger.info(started ? "manual sync-and-export triggered" : "sync-and-export request ignored because a run is active");
+    }
     res.redirect("/");
   });
 

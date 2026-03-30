@@ -65,6 +65,10 @@ export class SyncService {
     if (this.state.running) {
       return false;
     }
+    const device = this.deviceSyncService.getStatus();
+    if (!device.connected || !device.mountPath || !device.writable) {
+      return false;
+    }
     void this.syncAll(true);
     return true;
   }

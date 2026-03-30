@@ -30,7 +30,8 @@ Quick checks:
 - Sources are read from `channels.txt`.
 - Each line in `channels.txt` can be a channel handle like `Haminations`, an `@handle`, a channel URL, or a specific playlist URL.
 - Sync is manual from the UI (`Sync All Channels` or per-channel sync).
-- `Sync + Export To Player` runs a full channel sync, reconciles tracks already on the player, and copies any remaining pending tracks when the device is writable.
+- `Sync All Channels` is the prefetch path. It downloads/transcodes new items even if the player is not connected.
+- `Sync + Export To Player` is device-first. It only starts when the player is connected and writable, then syncs, reconciles tracks already on the player, and copies any remaining pending tracks.
 - Cookie/auth failures are tracked as `cookie_blocked` and listed on the dashboard.
 - Use `Retry Cookie-Blocked` in the dashboard after fixing cookies/auth.
 - Manual device workflow:
