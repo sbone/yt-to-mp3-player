@@ -67,14 +67,72 @@ function liveTerminalShell(): string {
       <h2>Live Activity</h2>
       <p class="small">Auto-refreshes every 2s while this page is open.</p>
       <pre id="live-terminal" class="terminal">Loading...</pre>
+      <div id="sync-notification-root"></div>
       <script>
         (() => {
           const terminal = document.getElementById("live-terminal");
+          const notificationRoot = document.getElementById("sync-notification-root");
           if (!terminal) return;
+          if (!notificationRoot) return;
+
+          const seenNotifications = new Set();
+          const dismissedNotifications = new Set();
+          const notificationQueue = [];
+          let activeNotificationId = null;
 
           const fmt = (iso) => {
             const d = new Date(iso);
             return Number.isNaN(d.getTime()) ? iso : d.toLocaleTimeString();
+          };
+
+          const escapeHtml = (value) =>
+            String(value)
+              .replaceAll("&", "&amp;")
+              .replaceAll("<", "&lt;")
+              .replaceAll(">", "&gt;")
+              .replaceAll('"', "&quot;")
+              .replaceAll("'", "&#039;");
+
+          const titleClass = (status) => {
+            if (status === "success") return "sync-notification-title sync-notification-title-ok";
+            if (status === "failed") return "sync-notification-title sync-notification-title-bad";
+            return "sync-notification-title sync-notification-title-warn";
+          };
+
+          const closeActiveNotification = () => {
+            if (!activeNotificationId) return;
+            dismissedNotifications.add(activeNotificationId);
+            const idx = notificationQueue.findIndex((item) => item.id === activeNotificationId);
+            if (idx >= 0) {
+              notificationQueue.splice(idx, 1);
+            }
+            activeNotificationId = null;
+            renderNotification();
+          };
+
+          const renderNotification = () => {
+            const next = notificationQueue.find((item) => !dismissedNotifications.has(item.id)) ?? null;
+            activeNotificationId = next ? next.id : null;
+            if (!next) {
+              notificationRoot.innerHTML = "";
+              return;
+            }
+
+            const detailItems = next.details
+              .map((detail) => "<li>" + escapeHtml(detail) + "</li>")
+              .join("");
+
+            notificationRoot.innerHTML = [
+              '<div class="sync-notification-backdrop" data-close-notification="true">',
+              '  <section class="sync-notification-modal card" role="dialog" aria-modal="true" aria-labelledby="sync-notification-title">',
+              '    <button type="button" class="sync-notification-close" aria-label="Dismiss notification" data-close-notification="true">x</button>',
+              '    <p class="' + titleClass(next.status) + '" id="sync-notification-title">' + escapeHtml(next.title) + '</p>',
+              '    <p class="sync-notification-summary">' + escapeHtml(next.summary) + '</p>',
+              '    <p class="small sync-notification-meta">' + escapeHtml(fmt(next.createdAt)) + '</p>',
+              '    <ul class="sync-notification-list">' + detailItems + '</ul>',
+              '  </section>',
+              '</div>'
+            ].join("");
           };
 
           const render = (payload) => {
@@ -90,7 +148,30 @@ function liveTerminalShell(): string {
             }
             terminal.textContent = lines.join("\\n");
             terminal.scrollTop = terminal.scrollHeight;
+
+            for (const notification of state.notifications ?? []) {
+              if (seenNotifications.has(notification.id) || dismissedNotifications.has(notification.id)) {
+                continue;
+              }
+              seenNotifications.add(notification.id);
+              notificationQueue.push(notification);
+            }
+            renderNotification();
           };
+
+          notificationRoot.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            if (target.dataset.closeNotification === "true") {
+              closeActiveNotification();
+            }
+          });
+
+          document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && activeNotificationId) {
+              closeActiveNotification();
+            }
+          });
 
           const load = async () => {
             try {

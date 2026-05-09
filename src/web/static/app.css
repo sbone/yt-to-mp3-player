@@ -212,6 +212,71 @@ th {
   font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
 }
 
+.sync-notification-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(26 26 26 / 0.38);
+}
+
+.sync-notification-modal {
+  position: relative;
+  width: min(520px, 100%);
+  padding: 1.1rem 1rem 1rem;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.18);
+}
+
+.sync-notification-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.7rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.2rem 0.35rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.sync-notification-title {
+  margin: 0 2rem 0.4rem 0;
+  font-weight: 700;
+}
+
+.sync-notification-title-ok {
+  color: var(--ok);
+}
+
+.sync-notification-title-warn {
+  color: var(--warn);
+}
+
+.sync-notification-title-bad {
+  color: var(--bad);
+}
+
+.sync-notification-summary {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+}
+
+.sync-notification-meta {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+}
+
+.sync-notification-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.sync-notification-list li + li {
+  margin-top: 0.25rem;
+}
+
 code {
   background: #f5f1e8;
   border-radius: 4px;

@@ -11,6 +11,7 @@ import { config } from "../config.js";
 interface SyncState {
   library: LibrarySyncState;
   player: PlayerSyncState;
+  notifications: SyncNotification[];
 }
 
 interface LibrarySyncState {
@@ -35,6 +36,16 @@ interface PlayerSyncState {
   lastCompletedAt: string | null;
   lastSummary: string | null;
   lastFailedCount: number;
+}
+
+interface SyncNotification {
+  id: string;
+  kind: "library" | "player";
+  title: string;
+  status: "success" | "partial" | "failed";
+  createdAt: string;
+  summary: string;
+  details: string[];
 }
 
 const ZERO_COUNTERS: SyncCounters = {
@@ -76,7 +87,8 @@ export class SyncService {
       lastCompletedAt: null,
       lastSummary: null,
       lastFailedCount: 0
-    }
+    },
+    notifications: []
   };
 
   constructor(
@@ -88,7 +100,22 @@ export class SyncService {
   getState(): SyncState {
     return {
       library: { ...this.state.library },
-      player: { ...this.state.player }
+      player: { ...this.state.player },
+      notifications: this.state.notifications.map((notification) => ({
+        ...notification,
+        details: [...notification.details]
+      }))
+    };
+  }
+
+  private pushNotification(notification: Omit<SyncNotification, "createdAt">): void {
+    const next: SyncNotification = {
+      ...notification,
+      createdAt: new Date().toISOString()
+    };
+    this.state = {
+      ...this.state,
+      notifications: [...this.state.notifications, next].slice(-12)
     };
   }
 
@@ -192,6 +219,20 @@ export class SyncService {
         `run completed status=${status} discovered=${totals.discovered} downloaded=${totals.downloaded} skipped=${totals.skipped} failed=${totals.failed}`
       );
       this.logger.info(`run=${runId} sync-all finished status=${status}`);
+      this.pushNotification({
+        id: `library:${runId}`,
+        kind: "library",
+        title: "Library refresh complete",
+        status,
+        summary: `Downloaded ${totals.downloaded} track${totals.downloaded === 1 ? "" : "s"} with ${totals.failed} error${totals.failed === 1 ? "" : "s"}.`,
+        details: [
+          `Scope: all channels`,
+          `Discovered: ${totals.discovered}`,
+          `Downloaded: ${totals.downloaded}`,
+          `Skipped: ${totals.skipped}`,
+          `Errors: ${totals.failed}`
+        ]
+      });
       this.setLibraryState({
         running: false,
         startedAt: null,
@@ -235,6 +276,20 @@ export class SyncService {
       this.db.finishRun(runId, counters, status);
       this.db.addEvent(runId, "info", "run-finish", `run completed status=${status}`, channel.id);
       this.logger.info(`run=${runId} sync-channel finished handle=${handle} status=${status}`);
+      this.pushNotification({
+        id: `library:${runId}`,
+        kind: "library",
+        title: `Channel refresh complete`,
+        status,
+        summary: `Downloaded ${counters.downloaded} track${counters.downloaded === 1 ? "" : "s"} for @${handle} with ${counters.failed} error${counters.failed === 1 ? "" : "s"}.`,
+        details: [
+          `Scope: @${handle}`,
+          `Discovered: ${counters.discovered}`,
+          `Downloaded: ${counters.downloaded}`,
+          `Skipped: ${counters.skipped}`,
+          `Errors: ${counters.failed}`
+        ]
+      });
       this.setLibraryState({
         running: false,
         startedAt: null,
@@ -320,6 +375,19 @@ export class SyncService {
       this.db.finishRun(runId, counters, status, "retry-cookie-blocked");
       this.db.addEvent(runId, "info", "retry-cookie-finish", `retry finished status=${status}`);
       this.logger.info(`run=${runId} retry-cookie-blocked finished status=${status}`);
+      this.pushNotification({
+        id: `library:${runId}`,
+        kind: "library",
+        title: "Cookie-blocked retry complete",
+        status,
+        summary: `Downloaded ${counters.downloaded} track${counters.downloaded === 1 ? "" : "s"} with ${counters.failed} error${counters.failed === 1 ? "" : "s"}.`,
+        details: [
+          `Scope: cookie-blocked retry`,
+          `Downloaded: ${counters.downloaded}`,
+          `Skipped: ${counters.skipped}`,
+          `Errors: ${counters.failed}`
+        ]
+      });
       this.setLibraryState({
         running: false,
         startedAt: null,
@@ -360,6 +428,19 @@ export class SyncService {
       this.db.finishRun(runId, { ...ZERO_COUNTERS }, status === "partial" ? "partial" : "success", "player-sync");
       this.db.addEvent(runId, "info", "player-sync-finish", "player sync finished");
       this.logger.info(`run=${runId} player-sync finished`);
+      this.pushNotification({
+        id: `player:${runId}`,
+        kind: "player",
+        title: "Player sync complete",
+        status,
+        summary,
+        details: [
+          `Synced to player: ${this.state.player.copied}`,
+          `Reconciled existing: ${this.state.player.reconciled}`,
+          `Errors: ${this.state.player.failed}`,
+          `Remaining: ${this.state.player.remaining}`
+        ]
+      });
       this.setPlayerState({
         lastCompletedAt: new Date().toISOString(),
         lastSummary: summary,
@@ -370,6 +451,19 @@ export class SyncService {
       this.db.finishRun(runId, { ...ZERO_COUNTERS }, "failed", "player-sync");
       this.db.addEvent(runId, "error", "player-sync-fatal", message);
       this.logger.error(`run=${runId} player-sync fatal error: ${message}`);
+      this.pushNotification({
+        id: `player:${runId}`,
+        kind: "player",
+        title: "Player sync failed",
+        status: "failed",
+        summary: message,
+        details: [
+          `Synced to player: ${this.state.player.copied}`,
+          `Reconciled existing: ${this.state.player.reconciled}`,
+          `Errors: ${Math.max(this.state.player.failed, 1)}`,
+          `Remaining: ${this.state.player.remaining}`
+        ]
+      });
       this.setPlayerState({
         lastCompletedAt: new Date().toISOString(),
         lastSummary: message,
@@ -434,7 +528,7 @@ export class SyncService {
     if (pendingAfterReconcile.length === 0) {
       this.db.addEvent(runId, "info", "device-export-finish", "no pending tracks remained after reconciliation");
       this.logger.info(`run=${runId} device export finished with no remaining pending tracks`);
-      return `reconciled=${reconciledIds.length}, copied=0, failed=0, remaining=0`;
+      return `Synced ${reconciledIds.length} track${reconciledIds.length === 1 ? "" : "s"} to player with 0 errors.`;
     }
 
     if (!device.writable) {
@@ -493,7 +587,9 @@ export class SyncService {
     for (const failure of copyOutcome.failed) {
       this.logger.error(`run=${runId} device export failed path=${failure.item.local_path} error=${failure.message}`);
     }
-    const summary = `reconciled=${reconciledIds.length}, copied=${copyOutcome.copied.length + copyOutcome.alreadyPresent.length}, failed=${copyOutcome.failed.length}, remaining=${copyOutcome.failed.length + copyOutcome.missingSource.length}`;
+    const syncedCount = reconciledIds.length + copyOutcome.copied.length + copyOutcome.alreadyPresent.length;
+    const errorCount = copyOutcome.failed.length + copyOutcome.missingSource.length;
+    const summary = `Synced ${syncedCount} track${syncedCount === 1 ? "" : "s"} to player with ${errorCount} error${errorCount === 1 ? "" : "s"}.`;
     this.setPlayerState({
       copied: copyOutcome.copied.length + copyOutcome.alreadyPresent.length,
       failed: copyOutcome.failed.length,
