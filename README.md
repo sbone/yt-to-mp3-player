@@ -1,6 +1,6 @@
 # yt-to-audio sync app
 
-Local, server-rendered TypeScript app that tracks YouTube channels and downloads new videos to MP3 using `yt-dlp`.
+Local TypeScript app with an Express API and React SPA that tracks YouTube channels and downloads new videos to MP3 using `yt-dlp`.
 
 ## Requirements
 
@@ -16,6 +16,11 @@ Local, server-rendered TypeScript app that tracks YouTube channels and downloads
 ```
 
 Open `http://127.0.0.1:3000`.
+
+Development notes:
+
+- `./scripts/dev.sh` starts the backend on port `3000` and points the SPA shell at `http://127.0.0.1:5173`.
+- Run the Vite client in a second terminal with `npm run dev:client`.
 
 Quick checks:
 
@@ -63,7 +68,7 @@ The first sync also tries to map existing MP3s by channel/title heuristics so ol
 ./scripts/start.sh
 ```
 
-`build` compiles TypeScript and builds Tailwind CSS into `dist/public/app.css`.
+`build` compiles the backend with TypeScript and builds the React client into `dist/public`.
 
 ## Runtime note
 

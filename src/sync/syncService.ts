@@ -8,13 +8,13 @@ import { downloadVideo, discoverChannel, isCookieAuthError } from "./ytDlp.js";
 import { ExistingDownloadIndex } from "./fileIndex.js";
 import { config } from "../config.js";
 
-interface SyncState {
+export interface SyncState {
   library: LibrarySyncState;
   player: PlayerSyncState;
   notifications: SyncNotification[];
 }
 
-interface LibrarySyncState {
+export interface LibrarySyncState {
   running: boolean;
   startedAt: string | null;
   runId: number | null;
@@ -22,7 +22,7 @@ interface LibrarySyncState {
   targetHandle: string | null;
 }
 
-interface PlayerSyncState {
+export interface PlayerSyncState {
   running: boolean;
   startedAt: string | null;
   runId: number | null;
@@ -38,7 +38,7 @@ interface PlayerSyncState {
   lastFailedCount: number;
 }
 
-interface SyncNotification {
+export interface SyncNotification {
   id: string;
   kind: "library" | "player";
   title: string;
