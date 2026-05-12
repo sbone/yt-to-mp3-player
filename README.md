@@ -19,8 +19,8 @@ Open `http://127.0.0.1:3000`.
 
 Development notes:
 
-- `./scripts/dev.sh` starts the backend on port `3000` and points the SPA shell at `http://127.0.0.1:5173`.
-- Run the Vite client in a second terminal with `npm run dev:client`.
+- `./scripts/dev.sh` starts both the backend on port `3000` and the Vite client on port `5173`.
+- If you want to run them separately, use `npm run dev:server` and `npm run dev:client`.
 
 Quick checks:
 

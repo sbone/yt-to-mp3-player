@@ -2,14 +2,18 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const devHost = process.env.DEV_CLIENT_HOST ?? "127.0.0.1";
+const devPort = Number(process.env.DEV_CLIENT_PORT ?? 5173);
+const apiTarget = process.env.API_PROXY_TARGET ?? "http://127.0.0.1:3000";
+
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: "127.0.0.1",
-    port: 5173,
+    host: devHost,
+    port: devPort,
     proxy: {
-      "/api": "http://127.0.0.1:3000",
-      "/device-sync/pending-manifest.txt": "http://127.0.0.1:3000"
+      "/api": apiTarget,
+      "/device-sync/pending-manifest.txt": apiTarget
     }
   },
   build: {

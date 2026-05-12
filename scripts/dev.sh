@@ -4,6 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VITE_PID=""
+DEV_CLIENT_HOST="${DEV_CLIENT_HOST:-127.0.0.1}"
+DEV_CLIENT_PORT="${DEV_CLIENT_PORT:-5173}"
 
 cleanup() {
   if [ -n "$VITE_PID" ] && kill -0 "$VITE_PID" 2>/dev/null; then
@@ -14,16 +16,7 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-npm run dev:client &
+npm run dev:client -- --host "$DEV_CLIENT_HOST" --port "$DEV_CLIENT_PORT" &
 VITE_PID=$!
 
-ASDF_BIN="$(command -v asdf 2>/dev/null || true)"
-if [ -z "$ASDF_BIN" ] && [ -x /opt/homebrew/bin/asdf ]; then
-  ASDF_BIN=/opt/homebrew/bin/asdf
-fi
-
-if [ -n "$ASDF_BIN" ]; then
-  exec env VITE_DEV_SERVER_URL="http://127.0.0.1:5173" "$ASDF_BIN" exec node --import tsx src/index.ts
-fi
-
-exec env VITE_DEV_SERVER_URL="http://127.0.0.1:5173" node --import tsx src/index.ts
+exec ./scripts/dev-server.sh
