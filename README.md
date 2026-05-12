@@ -11,7 +11,7 @@ Local TypeScript app with an Express API and React SPA that tracks YouTube chann
 ## Setup
 
 ```bash
-/opt/homebrew/bin/asdf exec npm install
+/opt/homebrew/bin/asdf exec npm ci
 ./scripts/dev.sh
 ```
 
