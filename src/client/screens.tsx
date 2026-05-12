@@ -45,6 +45,7 @@ export interface RemoteData<T> {
 interface ActionState {
   status: "idle" | "working" | "success" | "failure";
   message: string | null;
+  awaitingActive: boolean;
 }
 
 export interface DashboardModel {
@@ -135,29 +136,51 @@ function loading<T>(current: T | null): RemoteData<T> {
 function successAction(message: string): ActionState {
   return {
     status: "success",
-    message
+    message,
+    awaitingActive: false
   };
 }
 
 function failureAction(message: string): ActionState {
   return {
     status: "failure",
-    message
+    message,
+    awaitingActive: false
   };
 }
 
-function workingAction(): ActionState {
+function workingAction(awaitingActive = false): ActionState {
   return {
     status: "working",
-    message: null
+    message: null,
+    awaitingActive
   };
 }
 
 function idleAction(): ActionState {
   return {
     status: "idle",
-    message: null
+    message: null,
+    awaitingActive: false
   };
+}
+
+function settleActionAfterProcess(state: ActionState, running: boolean): ActionState {
+  if (state.status !== "working") {
+    return state;
+  }
+  if (state.awaitingActive) {
+    return running ? workingAction(false) : state;
+  }
+  if (running) {
+    return state;
+  }
+  return idleAction();
+}
+
+function isAlreadyActiveResponse(result: ActionResponse | SyncAndExportActionResponse): boolean {
+  const detail = `${result.reason ?? ""} ${result.message}`.toLowerCase();
+  return !result.started && detail.includes("already active");
 }
 
 export function initDashboardModel(): DashboardModel {
@@ -178,6 +201,9 @@ export function initDashboardModel(): DashboardModel {
 }
 
 function actionStateFromResult(result: ActionResponse | SyncAndExportActionResponse): ActionState {
+  if (isAlreadyActiveResponse(result)) {
+    return idleAction();
+  }
   return result.started ? successAction(result.message) : failureAction(result.reason ?? result.message);
 }
 
@@ -192,11 +218,22 @@ export function updateDashboardModel(model: DashboardModel, msg: DashboardMsg): 
     case "LiveRequested":
       return [model, [{ type: "FetchLiveActivity" }]];
     case "LiveLoaded":
+      const nextSyncAction = settleActionAfterProcess(model.syncAction, msg.data.state.library.running);
+      const nextSyncAndExportAction = settleActionAfterProcess(
+        model.syncAndExportAction,
+        msg.data.state.library.running || msg.data.state.player.running
+      );
+      const nextRetryAction = settleActionAfterProcess(model.retryAction, msg.data.state.library.running);
+      const nextSyncPlayerAction = settleActionAfterProcess(model.syncPlayerAction, msg.data.state.player.running);
       if (!model.notificationStateInitialized) {
         return [
           {
             ...model,
             notificationStateInitialized: true,
+            syncAction: nextSyncAction,
+            syncAndExportAction: nextSyncAndExportAction,
+            retryAction: nextRetryAction,
+            syncPlayerAction: nextSyncPlayerAction,
             seenNotificationIds: msg.data.state.notifications.map((notification) => notification.id),
             pendingNotificationIds: [],
             live: { status: "success", data: msg.data, error: null },
@@ -225,6 +262,10 @@ export function updateDashboardModel(model: DashboardModel, msg: DashboardMsg): 
       return [
         {
           ...model,
+          syncAction: nextSyncAction,
+          syncAndExportAction: nextSyncAndExportAction,
+          retryAction: nextRetryAction,
+          syncPlayerAction: nextSyncPlayerAction,
           seenNotificationIds: [...model.seenNotificationIds, ...nextNotificationIds],
           pendingNotificationIds: [...model.pendingNotificationIds, ...nextNotificationIds],
           live: { status: "success", data: msg.data, error: null },
@@ -248,39 +289,39 @@ export function updateDashboardModel(model: DashboardModel, msg: DashboardMsg): 
     case "LiveFailed":
       return [{ ...model, live: { status: "failure", data: model.live.data, error: msg.error } }, []];
     case "SyncRequested":
-      return [{ ...model, syncAction: workingAction() }, [{ type: "StartSync" }]];
+      return [{ ...model, syncAction: workingAction(true) }, [{ type: "StartSync" }]];
     case "SyncFinished":
       return [
-        { ...model, syncAction: actionStateFromResult(msg.result) },
+        { ...model, syncAction: msg.result.started ? workingAction(true) : actionStateFromResult(msg.result) },
         msg.result.started ? [{ type: "FetchDashboard" }, { type: "FetchLiveActivity" }] : []
       ];
     case "SyncAndExportRequested":
-      return [{ ...model, syncAndExportAction: workingAction() }, [{ type: "StartSyncAndExport" }]];
+      return [{ ...model, syncAndExportAction: workingAction(true) }, [{ type: "StartSyncAndExport" }]];
     case "SyncAndExportFinished":
       return [
-        { ...model, syncAndExportAction: actionStateFromResult(msg.result) },
+        { ...model, syncAndExportAction: msg.result.started ? workingAction(true) : actionStateFromResult(msg.result) },
         msg.result.started ? [{ type: "FetchDashboard" }, { type: "FetchLiveActivity" }] : []
       ];
     case "RetryRequested":
-      return [{ ...model, retryAction: workingAction() }, [{ type: "RetryCookieErrors" }]];
+      return [{ ...model, retryAction: workingAction(true) }, [{ type: "RetryCookieErrors" }]];
     case "RetryFinished":
       return [
-        { ...model, retryAction: actionStateFromResult(msg.result) },
+        { ...model, retryAction: msg.result.started ? workingAction(true) : actionStateFromResult(msg.result) },
         msg.result.started ? [{ type: "FetchDashboard" }, { type: "FetchLiveActivity" }] : []
       ];
     case "SyncPlayerNoteChanged":
       return [{ ...model, syncPlayerNote: msg.note }, []];
     case "SyncPlayerRequested":
-      return [{ ...model, syncPlayerAction: workingAction() }, [{ type: "StartPlayerSync", note: model.syncPlayerNote }]];
+      return [{ ...model, syncPlayerAction: workingAction(true) }, [{ type: "StartPlayerSync", note: model.syncPlayerNote }]];
     case "SyncPlayerFinished":
       return [
-        { ...model, syncPlayerAction: actionStateFromResult(msg.result) },
+        { ...model, syncPlayerAction: msg.result.started ? workingAction(true) : actionStateFromResult(msg.result) },
         msg.result.started ? [{ type: "FetchDashboard" }, { type: "FetchLiveActivity" }] : []
       ];
     case "MarkPendingNoteChanged":
       return [{ ...model, markPendingNote: msg.note }, []];
     case "MarkPendingRequested":
-      return [{ ...model, markPendingAction: workingAction() }, [{ type: "MarkPendingAsExported", note: model.markPendingNote }]];
+      return [{ ...model, markPendingAction: workingAction(false) }, [{ type: "MarkPendingAsExported", note: model.markPendingNote }]];
     case "MarkPendingFinished":
       return [
         { ...model, markPendingAction: actionStateFromResult(msg.result) },
@@ -344,13 +385,13 @@ export function updateChannelDetailModel(model: ChannelDetailModel, msg: Channel
       }
       return [{ ...model, data: { status: "failure", data: model.data.data, error: msg.error } }, []];
     case "SyncRequested":
-      return [{ ...model, syncAction: workingAction() }, [{ type: "StartChannelSync", handle: msg.handle }]];
+      return [{ ...model, syncAction: workingAction(true) }, [{ type: "StartChannelSync", handle: msg.handle }]];
     case "SyncFinished":
       if (model.handle !== msg.handle) {
         return [model, []];
       }
       return [
-        { ...model, syncAction: actionStateFromResult(msg.result) },
+        { ...model, syncAction: msg.result.started ? workingAction(true) : actionStateFromResult(msg.result) },
         msg.result.started ? [{ type: "FetchChannelDetail", handle: msg.handle }, { type: "FetchLiveActivity" }] : []
       ];
   }
@@ -419,6 +460,31 @@ function badgeClass(status: string): string {
   return "badge";
 }
 
+function badgeVariant(status: string): string {
+  if (status === "downloaded" || status === "success") return "success";
+  if (status === "cookie_blocked" || status === "warn" || status === "partial" || status === "running") return "warning";
+  if (status === "failed" || status === "error") return "danger";
+  return "muted";
+}
+
+function badgeAttributes(status: string): Record<string, string> {
+  return {
+    "is-": "badge",
+    "cap-": "round",
+    "variant-": badgeVariant(status)
+  };
+}
+
+function statBlock(label: string, value: string | number, tone?: "success" | "warning" | "danger"): ReactElement {
+  const className = tone ? `stat-block stat-block-${tone}` : "stat-block";
+  return (
+    <div className={className} {...{ "box-": "round" }}>
+      <p className="stat-label">{label}</p>
+      <p className="stat-value">{value}</p>
+    </div>
+  );
+}
+
 function channelLabel(handle: string | null | undefined): string {
   if (!handle) {
     return "";
@@ -428,18 +494,18 @@ function channelLabel(handle: string | null | undefined): string {
 
 function deviceStateBadge(status: string, exportedAt: string | null): ReactElement {
   if (status === "downloaded" && exportedAt) {
-    return <span className={badgeClass("success")}>On player</span>;
+    return <span className={badgeClass("success")} {...badgeAttributes("success")}>On player</span>;
   }
   if (status === "downloaded") {
-    return <span className={badgeClass("running")}>Local only</span>;
+    return <span className={badgeClass("running")} {...badgeAttributes("running")}>Local only</span>;
   }
   if (status === "failed") {
-    return <span className={badgeClass("failed")}>Failed</span>;
+    return <span className={badgeClass("failed")} {...badgeAttributes("failed")}>Failed</span>;
   }
   if (status === "cookie_blocked") {
-    return <span className={badgeClass("warn")}>Cookie blocked</span>;
+    return <span className={badgeClass("warn")} {...badgeAttributes("warn")}>Cookie blocked</span>;
   }
-  return <span className={badgeClass("discovered")}>Not downloaded</span>;
+  return <span className={badgeClass("discovered")} {...badgeAttributes("discovered")}>Not downloaded</span>;
 }
 
 function renderActionState(state: ActionState): ReactElement | null {
@@ -448,6 +514,31 @@ function renderActionState(state: ActionState): ReactElement | null {
   }
   const className = state.status === "success" ? "small" : "small mono";
   return <p className={className}>{state.message}</p>;
+}
+
+function renderButtonLabel(label: string, workingLabel: string, working: boolean): ReactElement {
+  if (!working) {
+    return <>{label}</>;
+  }
+
+  return (
+    <span className="button-content">
+      <span aria-hidden="true" {...{ "is-": "spinner", "variant-": "dots", "speed-": "fast" }} />
+      <span>{workingLabel}</span>
+    </span>
+  );
+}
+
+function wrapWithTooltip(content: ReactElement, tooltip: string | null): ReactElement {
+  if (!tooltip) {
+    return content;
+  }
+
+  return (
+    <span className="tooltip-anchor" data-tooltip={tooltip} tabIndex={0}>
+      {content}
+    </span>
+  );
 }
 
 function renderRemoteError(error: string | null): ReactElement | null {
@@ -459,7 +550,7 @@ function renderRemoteError(error: string | null): ReactElement | null {
 
 function renderTerminal(live: LiveActivityDto | null): ReactElement {
   if (!live) {
-    return <pre className="terminal">Loading...</pre>;
+    return <pre className="terminal" {...{ "is-": "pre", "box-": "double" }}>Loading...</pre>;
   }
 
   const lines = [
@@ -474,7 +565,7 @@ function renderTerminal(live: LiveActivityDto | null): ReactElement {
     lines.push(`[${new Date(event.created_at).toLocaleTimeString()}] [${event.level.toUpperCase()}] [run ${event.run_id}] ${event.event_type}${channel} :: ${event.message}`);
   }
 
-  return <pre className="terminal">{lines.join("\n")}</pre>;
+  return <pre className="terminal" {...{ "is-": "pre", "box-": "double" }}>{lines.join("\n")}</pre>;
 }
 
 function activeNotification(notifications: SyncNotification[], pendingNotificationIds: string[]): SyncNotification | null {
@@ -487,12 +578,24 @@ function activeNotification(notifications: SyncNotification[], pendingNotificati
   return null;
 }
 
+function summarizeRunScope(scope: string, handle: string | null): string {
+  return handle ? `${scope} · ${channelLabel(handle)}` : scope;
+}
+
 export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: DashboardMsg) => void): ReactElement {
   const payload = model.data.data;
   const livePayload = model.live.data;
   const syncState = livePayload?.state ?? payload?.syncState;
+  const libraryActive = syncState?.library.running ?? false;
+  const playerActive = syncState?.player.running ?? false;
+  const isCookieRetryRun = libraryActive && syncState?.library.targetHandle === "cookie-blocked";
+  const isCombinedRun = libraryActive && playerActive;
+  const isLibraryRefreshRun =
+    libraryActive && !playerActive && syncState?.library.scope === "all" && syncState.library.targetHandle == null;
+  const isPlayerOnlyRun = playerActive && !libraryActive;
   const deviceStatus = livePayload?.deviceStatus ?? payload?.deviceStatus;
   const deviceReadyForExport = livePayload?.deviceReadyForExport ?? payload?.deviceReadyForExport ?? false;
+  const playerDisabledReason = !deviceReadyForExport ? deviceStatus?.reason ?? "Player not available." : null;
   const safeToDisconnect = livePayload?.safeToDisconnect ?? payload?.safeToDisconnect ?? false;
   const pendingExportCount = payload?.pendingExport?.length ?? 0;
   const cookieBlockedCount = payload?.cookieBlocked?.length ?? 0;
@@ -500,29 +603,63 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
 
   return (
     <>
-      <section className="hero">
+      <section className="hero" {...{ "box-": "double" }}>
         <h1>Channel Sync Dashboard</h1>
         <p>React-based control panel for yt-dlp channel tracking.</p>
         <div className="actions">
-          <button type="button" onClick={() => dispatch({ type: "SyncRequested" })}>
-            Refresh Library
-          </button>
           <button
             type="button"
-            disabled={!deviceReadyForExport}
-            onClick={() => dispatch({ type: "SyncPlayerRequested" })}
+            {...{ "box-": "round", "variant-": "foreground0" }}
+            disabled={libraryActive || model.syncAction.status === "working"}
+            onClick={() => dispatch({ type: "SyncRequested" })}
           >
-            Sync Player
+            {renderButtonLabel(
+              "Refresh Library",
+              isLibraryRefreshRun ? "Library Refresh Active..." : "Refreshing Library...",
+              isLibraryRefreshRun || model.syncAction.status === "working"
+            )}
           </button>
+          {wrapWithTooltip(
+            <button
+              type="button"
+              {...{ "box-": "round", "variant-": "success" }}
+              disabled={!deviceReadyForExport || playerActive || model.syncPlayerAction.status === "working"}
+              onClick={() => dispatch({ type: "SyncPlayerRequested" })}
+            >
+              {renderButtonLabel(
+                "Sync Player",
+                isPlayerOnlyRun ? "Player Sync Active..." : "Syncing Player...",
+                isPlayerOnlyRun || model.syncPlayerAction.status === "working"
+              )}
+            </button>,
+            playerDisabledReason
+          )}
+          {wrapWithTooltip(
+            <button
+              type="button"
+              {...{ "box-": "round", "variant-": "foreground1" }}
+              disabled={!deviceReadyForExport || libraryActive || playerActive || model.syncAndExportAction.status === "working"}
+              onClick={() => dispatch({ type: "SyncAndExportRequested" })}
+            >
+              {renderButtonLabel(
+                "Refresh Library + Sync Player",
+                isCombinedRun ? "Refresh + Sync Active..." : "Refreshing + Syncing...",
+                isCombinedRun || model.syncAndExportAction.status === "working"
+              )}
+            </button>,
+            playerDisabledReason
+          )}
           <button
             type="button"
-            disabled={!deviceReadyForExport}
-            onClick={() => dispatch({ type: "SyncAndExportRequested" })}
+            {...{ "box-": "round", "variant-": "warning" }}
+            disabled={libraryActive || model.retryAction.status === "working"}
+            onClick={() => dispatch({ type: "RetryRequested" })}
           >
-            Refresh Library + Sync Player
-          </button>
-          <button type="button" onClick={() => dispatch({ type: "RetryRequested" })}>
-            Retry Cookie-Blocked ({cookieBlockedCount})
+            {renderButtonLabel(
+              `Retry Cookie-Blocked (${cookieBlockedCount})`,
+              isCookieRetryRun ? "Cookie Retry Active..." : "Retrying Cookie-Blocked...",
+              isCookieRetryRun || model.retryAction.status === "working"
+            )}
           </button>
         </div>
         {renderActionState(model.syncAction)}
@@ -531,7 +668,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
         {renderRemoteError(model.data.error)}
       </section>
 
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
         <h2>Sync State</h2>
         <p className="mono">library: {syncState?.library.running ? "running" : "idle"}</p>
         <p className="mono">library run: {syncState?.library.runId ?? "n/a"}</p>
@@ -549,7 +686,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
         <p className="mono">player current: {syncState?.player.currentItemTitle ?? "idle"}</p>
       </section>
 
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
         <h2>MP3 Player Export</h2>
         <p className="small">
           Tracks ready to copy now: <strong>{pendingExportCount}</strong>
@@ -584,33 +721,52 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
         <div className="actions">
           <div className="inline-form">
             <input
+              {...{ "is-": "input" }}
               name="sync-player-note"
               type="text"
               placeholder="Optional note (e.g. auto-copied to AGP-A02T)"
               value={model.syncPlayerNote}
               onChange={(event) => dispatch({ type: "SyncPlayerNoteChanged", note: event.target.value })}
             />
-            <button
-              type="button"
-              disabled={!deviceReadyForExport}
-              onClick={() => dispatch({ type: "SyncPlayerRequested" })}
-            >
-              Sync Player Now
-            </button>
+            {wrapWithTooltip(
+              <button
+                type="button"
+                {...{ "box-": "round", "variant-": "success" }}
+                disabled={!deviceReadyForExport || playerActive || model.syncPlayerAction.status === "working"}
+                onClick={() => dispatch({ type: "SyncPlayerRequested" })}
+              >
+                {renderButtonLabel(
+                  "Sync Player Now",
+                  isPlayerOnlyRun ? "Player Sync Active..." : "Syncing Player...",
+                  isPlayerOnlyRun || model.syncPlayerAction.status === "working"
+                )}
+              </button>,
+              playerDisabledReason
+            )}
           </div>
           <div className="inline-form">
             <input
+              {...{ "is-": "input" }}
               name="mark-pending-note"
               type="text"
               placeholder="Optional note (e.g. copied to SanDisk)"
               value={model.markPendingNote}
               onChange={(event) => dispatch({ type: "MarkPendingNoteChanged", note: event.target.value })}
             />
-            <button type="button" onClick={() => dispatch({ type: "MarkPendingRequested" })}>
-              Mark Pending As Exported
+            <button
+              type="button"
+              {...{ "box-": "round", "variant-": "foreground1" }}
+              disabled={model.markPendingAction.status === "working"}
+              onClick={() => dispatch({ type: "MarkPendingRequested" })}
+            >
+              {renderButtonLabel(
+                "Mark Pending As Exported",
+                "Marking Pending...",
+                model.markPendingAction.status === "working"
+              )}
             </button>
           </div>
-          <a className="button-link" href="/device-sync/pending-manifest.txt">
+          <a className="button-link" href="/device-sync/pending-manifest.txt" {...{ "is-": "button", "box-": "round" }}>
             Download Pending Manifest
           </a>
         </div>
@@ -618,7 +774,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
         {renderActionState(model.markPendingAction)}
       </section>
 
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
         <h2>Pending Export Queue</h2>
         <p className="small">Newest local-only tracks are listed first so the player gets fresh audio before older backlog.</p>
         <table>
@@ -649,7 +805,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
         </table>
       </section>
 
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
         <h2>Channels</h2>
         <table>
           <thead>
@@ -685,7 +841,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
         </table>
       </section>
 
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
         <h2>Cookie-Blocked Videos</h2>
         <table>
           <thead>
@@ -719,7 +875,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
         </table>
       </section>
 
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
         <h2>Recent Runs</h2>
         <table>
           <thead>
@@ -744,7 +900,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
                   {run.scope} {run.channel_handle ? `(${run.channel_handle})` : ""}
                 </td>
                 <td>
-                  <span className={badgeClass(run.status)}>{run.status}</span>
+                  <span className={badgeClass(run.status)} {...badgeAttributes(run.status)}>{run.status}</span>
                 </td>
                 <td>{run.discovered_count}</td>
                 <td>{run.downloaded_count}</td>
@@ -755,9 +911,9 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
         </table>
       </section>
 
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
         <h2>Live Activity</h2>
-        <p className="small">Auto-refreshes every 2s while this page is open.</p>
+        <p className="small">Live updates stream over SSE while this page is open.</p>
         {renderRemoteError(model.live.error)}
         {renderTerminal(livePayload)}
       </section>
@@ -766,6 +922,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
         <div className="sync-notification-backdrop" onClick={() => dispatch({ type: "NotificationDismissed", id: notification.id })}>
           <section
             className="sync-notification-modal card"
+            {...{ "box-": "double" }}
             role="dialog"
             aria-modal="true"
             aria-labelledby="sync-notification-title"
@@ -807,14 +964,28 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
 
 export function renderChannelsScreen(model: ChannelsModel): ReactElement {
   const payload = model.data.data;
+  const channelCount = payload?.channels.length ?? 0;
+  const localOnlyCount = payload?.channels.reduce((sum, channel) => sum + channel.local_only_videos, 0) ?? 0;
+  const syncNeededCount = payload?.channels.reduce((sum, channel) => sum + channel.needs_sync_videos, 0) ?? 0;
+  const blockedCount = payload?.channels.reduce((sum, channel) => sum + channel.cookie_blocked_videos, 0) ?? 0;
   return (
     <>
-      <section className="hero">
+      <section className="hero" {...{ "box-": "double" }}>
         <h1>Tracked Channels</h1>
         <p>Edit <code>channels.txt</code> to change what is tracked.</p>
+        <div className="stat-grid stat-grid-compact">
+          {statBlock("Channels", channelCount)}
+          {statBlock("Local Only", localOnlyCount)}
+          {statBlock("Needs Sync", syncNeededCount, syncNeededCount > 0 ? "warning" : undefined)}
+          {statBlock("Cookie Blocked", blockedCount, blockedCount > 0 ? "danger" : undefined)}
+        </div>
         {renderRemoteError(model.data.error)}
       </section>
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
+        <div className="section-head">
+          <h2>Channel Ledger</h2>
+          <p className="small mono">Every row shows backlog pressure, last success, and whether that channel is drifting away from the player copy.</p>
+        </div>
         <table>
           <thead>
             <tr>
@@ -855,9 +1026,13 @@ export function renderChannelsScreen(model: ChannelsModel): ReactElement {
 export function renderChannelDetailScreen(model: ChannelDetailModel, dispatch: (msg: ChannelDetailMsg) => void): ReactElement {
   const payload = model.data.data;
   const handle = model.handle ?? payload?.channel.handle ?? "";
+  const downloadedCount = payload?.videos.filter((video) => video.status === "downloaded").length ?? 0;
+  const failedCount = payload?.videos.filter((video) => video.status === "failed").length ?? 0;
+  const blockedCount = payload?.videos.filter((video) => video.status === "cookie_blocked").length ?? 0;
+  const exportedCount = payload?.videos.filter((video) => Boolean(video.exported_at)).length ?? 0;
   if (!payload && model.data.status === "failure") {
     return (
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
         <h1>Unknown channel</h1>
         {renderRemoteError(model.data.error)}
       </section>
@@ -865,18 +1040,46 @@ export function renderChannelDetailScreen(model: ChannelDetailModel, dispatch: (
   }
   return (
     <>
-      <section className="hero">
+      <section className="hero" {...{ "box-": "double" }}>
         <h1>{payload ? channelLabel(payload.channel.handle) : channelLabel(handle)}</h1>
-        <p>{payload?.channel.url ?? ""}</p>
+        <div className="detail-shell">
+          <div className="detail-lead">
+            <p>{payload?.channel.url ?? ""}</p>
+            {payload ? (
+              <div className="detail-meta">
+                <p className="small mono">created {fmtDate(payload.channel.created_at)}</p>
+                <p className="small mono">last checked {fmtDate(payload.channel.last_checked_at)}</p>
+                <p className="small mono">last success {fmtDate(payload.channel.last_success_at)}</p>
+                <p className="small mono">last error {fmtDate(payload.channel.last_error_at)}</p>
+              </div>
+            ) : null}
+          </div>
+          <div className="stat-grid stat-grid-compact">
+            {statBlock("Known Videos", payload?.videos.length ?? 0)}
+            {statBlock("Downloaded", downloadedCount, downloadedCount > 0 ? "success" : undefined)}
+            {statBlock("On Player", exportedCount, exportedCount > 0 ? "success" : undefined)}
+            {statBlock("Failed", failedCount, failedCount > 0 ? "danger" : undefined)}
+            {statBlock("Cookie Blocked", blockedCount, blockedCount > 0 ? "danger" : undefined)}
+          </div>
+        </div>
         <div className="actions">
-          <button type="button" disabled={!handle} onClick={() => handle && dispatch({ type: "SyncRequested", handle })}>
-            Sync This Channel
+          <button
+            type="button"
+            {...{ "box-": "round", "variant-": "foreground0" }}
+            disabled={!handle || model.syncAction.status === "working"}
+            onClick={() => handle && dispatch({ type: "SyncRequested", handle })}
+          >
+            {renderButtonLabel("Sync This Channel", "Syncing Channel...", model.syncAction.status === "working")}
           </button>
         </div>
         {renderActionState(model.syncAction)}
         {renderRemoteError(model.data.error)}
       </section>
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
+        <div className="section-head">
+          <h2>Channel Inventory</h2>
+          <p className="small mono">Newest metadata, device state, and file path health for every discovered video on this channel.</p>
+        </div>
         <table>
           <thead>
             <tr>
@@ -897,7 +1100,7 @@ export function renderChannelDetailScreen(model: ChannelDetailModel, dispatch: (
                 </td>
                 <td>{video.upload_date ?? "n/a"}</td>
                 <td>
-                  <span className={badgeClass(video.status)}>{video.status}</span>
+                  <span className={badgeClass(video.status)} {...badgeAttributes(video.status)}>{video.status}</span>
                 </td>
                 <td>{deviceStateBadge(video.status, video.exported_at)}</td>
                 <td>{fmtDate(video.exported_at)}</td>
@@ -914,13 +1117,27 @@ export function renderChannelDetailScreen(model: ChannelDetailModel, dispatch: (
 
 export function renderRunsScreen(model: RunsModel): ReactElement {
   const payload = model.data.data;
+  const runCount = payload?.runs.length ?? 0;
+  const activeCount = payload?.runs.filter((run) => run.status === "running").length ?? 0;
+  const failedCount = payload?.runs.filter((run) => run.failed_count > 0 || run.status === "failed").length ?? 0;
+  const downloadedCount = payload?.runs.reduce((sum, run) => sum + run.downloaded_count, 0) ?? 0;
   return (
     <>
-      <section className="hero">
+      <section className="hero" {...{ "box-": "double" }}>
         <h1>Sync Runs</h1>
+        <div className="stat-grid stat-grid-compact">
+          {statBlock("Runs", runCount)}
+          {statBlock("Active", activeCount, activeCount > 0 ? "warning" : undefined)}
+          {statBlock("Downloads", downloadedCount, downloadedCount > 0 ? "success" : undefined)}
+          {statBlock("With Failures", failedCount, failedCount > 0 ? "danger" : undefined)}
+        </div>
         {renderRemoteError(model.data.error)}
       </section>
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
+        <div className="section-head">
+          <h2>Run Ledger</h2>
+          <p className="small mono">Recent library sweeps, channel-specific jobs, and their download/skip/failure balance.</p>
+        </div>
         <table>
           <thead>
             <tr>
@@ -940,11 +1157,9 @@ export function renderRunsScreen(model: RunsModel): ReactElement {
                 </td>
                 <td>{fmtDate(run.started_at)}</td>
                 <td>{fmtDate(run.finished_at)}</td>
+                <td>{summarizeRunScope(run.scope, run.channel_handle)}</td>
                 <td>
-                  {run.scope} {run.channel_handle ? `(${run.channel_handle})` : ""}
-                </td>
-                <td>
-                  <span className={badgeClass(run.status)}>{run.status}</span>
+                  <span className={badgeClass(run.status)} {...badgeAttributes(run.status)}>{run.status}</span>
                 </td>
                 <td>
                   {run.downloaded_count}/{run.skipped_count}/{run.failed_count}
@@ -960,9 +1175,12 @@ export function renderRunsScreen(model: RunsModel): ReactElement {
 
 export function renderRunDetailScreen(model: RunDetailModel): ReactElement {
   const payload = model.data.data;
+  const eventCount = payload?.events.length ?? 0;
+  const warningCount = payload?.events.filter((event) => event.level === "warn").length ?? 0;
+  const errorCount = payload?.events.filter((event) => event.level === "error").length ?? 0;
   if (!payload && model.data.status === "failure") {
     return (
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
         <h1>Run not found</h1>
         {renderRemoteError(model.data.error)}
       </section>
@@ -970,16 +1188,38 @@ export function renderRunDetailScreen(model: RunDetailModel): ReactElement {
   }
   return (
     <>
-      <section className="hero">
+      <section className="hero" {...{ "box-": "double" }}>
         <h1>Run #{payload?.run.id ?? model.runId ?? "n/a"}</h1>
         {payload ? (
-          <p>
-            <span className={badgeClass(payload.run.status)}>{payload.run.status}</span> started {fmtDate(payload.run.started_at)}
-          </p>
+          <div className="detail-shell">
+            <div className="detail-lead">
+              <p>
+                <span className={badgeClass(payload.run.status)} {...badgeAttributes(payload.run.status)}>{payload.run.status}</span> started{" "}
+                {fmtDate(payload.run.started_at)}
+              </p>
+              <div className="detail-meta">
+                <p className="small mono">finished {fmtDate(payload.run.finished_at)}</p>
+                <p className="small mono">scope {summarizeRunScope(payload.run.scope, payload.run.channel_handle)}</p>
+                <p className="small mono">discovered {payload.run.discovered_count}</p>
+                <p className="small mono">skipped {payload.run.skipped_count}</p>
+              </div>
+            </div>
+            <div className="stat-grid stat-grid-compact">
+              {statBlock("Downloads", payload.run.downloaded_count, payload.run.downloaded_count > 0 ? "success" : undefined)}
+              {statBlock("Skipped", payload.run.skipped_count)}
+              {statBlock("Warnings", warningCount, warningCount > 0 ? "warning" : undefined)}
+              {statBlock("Errors", errorCount, errorCount > 0 ? "danger" : undefined)}
+              {statBlock("Events", eventCount)}
+            </div>
+          </div>
         ) : null}
         {renderRemoteError(model.data.error)}
       </section>
-      <section className="card">
+      <section className="card" {...{ "box-": "round" }}>
+        <div className="section-head">
+          <h2>Event Transcript</h2>
+          <p className="small mono">Ordered run events with channel attribution and severity markers preserved.</p>
+        </div>
         <table>
           <thead>
             <tr>
@@ -995,7 +1235,7 @@ export function renderRunDetailScreen(model: RunDetailModel): ReactElement {
               <tr key={event.id}>
                 <td>{fmtDate(event.created_at)}</td>
                 <td>
-                  <span className={badgeClass(event.level)}>{event.level}</span>
+                  <span className={badgeClass(event.level)} {...badgeAttributes(event.level)}>{event.level}</span>
                 </td>
                 <td className="mono">{event.event_type}</td>
                 <td>{channelLabel(event.channel_handle)}</td>

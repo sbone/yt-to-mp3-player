@@ -366,15 +366,21 @@ function AppProgram(): ReactElement {
 
   return (
     <>
-      <header className="topbar">
+      <header className="topbar" {...{ "box-": "double", "shear-": "bottom" }}>
         <div className="topbar-inner">
-          <Link className="brand" to="/">
+          <Link className="brand" to="/" {...{ "is-": "button", "size-": "small" }}>
             yt-to-audio
           </Link>
           <nav className="nav">
-            <Link to="/">Dashboard</Link>
-            <Link to="/channels">Channels</Link>
-            <Link to="/runs">Runs</Link>
+            <Link to="/" {...{ "is-": "button", "size-": "small", "box-": "round" }}>
+              Dashboard
+            </Link>
+            <Link to="/channels" {...{ "is-": "button", "size-": "small", "box-": "round" }}>
+              Channels
+            </Link>
+            <Link to="/runs" {...{ "is-": "button", "size-": "small", "box-": "round" }}>
+              Runs
+            </Link>
           </nav>
         </div>
       </header>
@@ -387,7 +393,7 @@ function AppProgram(): ReactElement {
         {route.kind === "runs" ? renderRunsScreen(program.model.runs) : null}
         {route.kind === "run-detail" ? renderRunDetailScreen(program.model.runDetail) : null}
         {route.kind === "not-found" ? (
-          <section className="card">
+          <section className="card" {...{ "box-": "round" }}>
             <h1>Not Found</h1>
             <p className="small mono">Unknown route: {hrefForRoute(route)}</p>
           </section>

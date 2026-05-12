@@ -17,6 +17,7 @@ export default defineConfig({
     }
   },
   build: {
+    cssMinify: "esbuild",
     outDir: "dist/public",
     emptyOutDir: false,
     rollupOptions: {

@@ -14,7 +14,7 @@ export function renderSpaShell(title = "yt-to-audio"): string {
     <script type="module" src="/assets/client.js"></script>`;
 
   return `<!doctype html>
-<html lang="en">
+<html lang="en" data-webtui-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
