@@ -88,12 +88,20 @@ export function createServer(
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
 
+  const setNoCacheHeaders = (_req: express.Request, res: express.Response, next: express.NextFunction): void => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+    next();
+  };
+
   const publicAssetPath = resolve(config.rootDir, "dist/public");
   if (existsSync(publicAssetPath)) {
     app.use("/assets", express.static(publicAssetPath));
   }
 
-  app.get("/api/dashboard", (_req, res) => {
+  app.get("/api/dashboard", setNoCacheHeaders, (_req, res) => {
     res.json(createDashboardPayload(db, syncService, deviceSyncService));
   });
 
@@ -146,10 +154,18 @@ export function createServer(
     res.json(payload);
   });
 
-  app.get("/api/live", (_req, res) => {
+  app.get("/api/live", setNoCacheHeaders, (_req, res) => {
+    const deviceStatus = deviceSyncService.getStatus();
+    const state = syncService.getState();
+    const deviceReadyForExport = deviceStatus.connected && Boolean(deviceStatus.mountPath) && deviceStatus.writable;
+    const safeToDisconnect =
+      deviceStatus.connected && !state.player.running && state.player.remaining === 0 && state.player.lastFailedCount === 0;
     const payload: LiveActivityDto = {
-      state: syncService.getState(),
-      events: db.listRecentEvents(120).reverse()
+      state,
+      events: db.listRecentEvents(120).reverse(),
+      deviceStatus,
+      deviceReadyForExport,
+      safeToDisconnect
     };
     res.json(payload);
   });

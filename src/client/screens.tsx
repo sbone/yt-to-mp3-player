@@ -24,8 +24,6 @@ export type Cmd =
   | { type: "FetchRuns" }
   | { type: "FetchRunDetail"; runId: number }
   | { type: "FetchLiveActivity" }
-  | { type: "StartDashboardPolling" }
-  | { type: "StopDashboardPolling" }
   | { type: "StartSync" }
   | { type: "StartSyncAndExport" }
   | { type: "RetryCookieErrors" }
@@ -206,7 +204,13 @@ export function updateDashboardModel(model: DashboardModel, msg: DashboardMsg): 
               model.data.status === "success" && model.data.data
                 ? {
                     status: "success",
-                    data: { ...model.data.data, syncState: msg.data.state },
+                    data: {
+                      ...model.data.data,
+                      syncState: msg.data.state,
+                      deviceStatus: msg.data.deviceStatus ?? model.data.data.deviceStatus,
+                      deviceReadyForExport: msg.data.deviceReadyForExport ?? model.data.data.deviceReadyForExport,
+                      safeToDisconnect: msg.data.safeToDisconnect ?? model.data.data.safeToDisconnect
+                    },
                     error: null
                   }
                 : model.data
@@ -228,7 +232,13 @@ export function updateDashboardModel(model: DashboardModel, msg: DashboardMsg): 
             model.data.status === "success" && model.data.data
               ? {
                   status: "success",
-                  data: { ...model.data.data, syncState: msg.data.state },
+                  data: {
+                    ...model.data.data,
+                    syncState: msg.data.state,
+                    deviceStatus: msg.data.deviceStatus ?? model.data.data.deviceStatus,
+                    deviceReadyForExport: msg.data.deviceReadyForExport ?? model.data.data.deviceReadyForExport,
+                    safeToDisconnect: msg.data.safeToDisconnect ?? model.data.data.safeToDisconnect
+                  },
                   error: null
                 }
               : model.data
@@ -480,7 +490,12 @@ function activeNotification(notifications: SyncNotification[], pendingNotificati
 export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: DashboardMsg) => void): ReactElement {
   const payload = model.data.data;
   const livePayload = model.live.data;
-  const syncState = payload?.syncState;
+  const syncState = livePayload?.state ?? payload?.syncState;
+  const deviceStatus = livePayload?.deviceStatus ?? payload?.deviceStatus;
+  const deviceReadyForExport = livePayload?.deviceReadyForExport ?? payload?.deviceReadyForExport ?? false;
+  const safeToDisconnect = livePayload?.safeToDisconnect ?? payload?.safeToDisconnect ?? false;
+  const pendingExportCount = payload?.pendingExport?.length ?? 0;
+  const cookieBlockedCount = payload?.cookieBlocked?.length ?? 0;
   const notification = livePayload ? activeNotification(livePayload.state.notifications, model.pendingNotificationIds) : null;
 
   return (
@@ -494,20 +509,20 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
           </button>
           <button
             type="button"
-            disabled={!payload?.deviceReadyForExport}
+            disabled={!deviceReadyForExport}
             onClick={() => dispatch({ type: "SyncPlayerRequested" })}
           >
             Sync Player
           </button>
           <button
             type="button"
-            disabled={!payload?.deviceReadyForExport}
+            disabled={!deviceReadyForExport}
             onClick={() => dispatch({ type: "SyncAndExportRequested" })}
           >
             Refresh Library + Sync Player
           </button>
           <button type="button" onClick={() => dispatch({ type: "RetryRequested" })}>
-            Retry Cookie-Blocked ({payload?.cookieBlocked.length ?? 0})
+            Retry Cookie-Blocked ({cookieBlockedCount})
           </button>
         </div>
         {renderActionState(model.syncAction)}
@@ -537,24 +552,24 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
       <section className="card">
         <h2>MP3 Player Export</h2>
         <p className="small">
-          Tracks ready to copy now: <strong>{payload?.pendingExport.length ?? 0}</strong>
+          Tracks ready to copy now: <strong>{pendingExportCount}</strong>
         </p>
         <p className="small">
           Device status:{" "}
-          <strong>{payload?.deviceStatus.connected ? `connected (${payload.deviceStatus.volumeName})` : "not connected"}</strong>{" "}
-          {payload?.deviceStatus.mountPath ? <>at <code>{payload.deviceStatus.mountPath}</code></> : null}
+          <strong>{deviceStatus?.connected ? `connected (${deviceStatus.volumeName})` : "not connected"}</strong>{" "}
+          {deviceStatus?.mountPath ? <>at <code>{deviceStatus.mountPath}</code></> : null}
         </p>
         <p className="small">
           Disconnect status:{" "}
           <strong>
-            {payload?.safeToDisconnect
+            {safeToDisconnect
               ? "Safe to disconnect"
               : syncState?.player.running
                 ? "Do not disconnect during player sync"
                 : "Not ready to disconnect"}
           </strong>
         </p>
-        {payload?.deviceStatus.reason ? <p className="small">Detection note: {payload.deviceStatus.reason}</p> : null}
+        {deviceStatus?.reason ? <p className="small">Detection note: {deviceStatus.reason}</p> : null}
         <p className="small">
           Last device update: <strong>{payload?.latestDeviceSync ? fmtDate(payload.latestDeviceSync.created_at) : "never"}</strong>{" "}
           {payload?.latestDeviceSync ? `(tracks: ${payload.latestDeviceSync.item_count})` : ""}
@@ -577,7 +592,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
             />
             <button
               type="button"
-              disabled={!payload?.deviceReadyForExport}
+              disabled={!deviceReadyForExport}
               onClick={() => dispatch({ type: "SyncPlayerRequested" })}
             >
               Sync Player Now

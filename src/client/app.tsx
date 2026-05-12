@@ -81,32 +81,32 @@ function activateRoute(model: AppModel, route: Route): [AppModel, Cmd[]] {
     case "dashboard": {
       const [dashboard, dashboardCmds] = updateDashboardModel(nextModel.dashboard, { type: "LoadRequested" });
       const [, liveCmds] = updateDashboardModel(dashboard, { type: "LiveRequested" });
-      return [{ ...nextModel, dashboard }, [...dashboardCmds, ...liveCmds, { type: "StartDashboardPolling" }]];
+      return [{ ...nextModel, dashboard }, [...dashboardCmds, ...liveCmds]];
     }
     case "channels": {
       const [channels, cmds] = updateChannelsModel(nextModel.channels, { type: "LoadRequested" });
-      return [{ ...nextModel, channels }, [{ type: "StopDashboardPolling" }, ...cmds]];
+      return [{ ...nextModel, channels }, cmds];
     }
     case "channel-detail": {
       const [channelDetail, cmds] = updateChannelDetailModel(nextModel.channelDetail, {
         type: "LoadRequested",
         handle: route.handle
       });
-      return [{ ...nextModel, channelDetail }, [{ type: "StopDashboardPolling" }, ...cmds]];
+      return [{ ...nextModel, channelDetail }, cmds];
     }
     case "runs": {
       const [runs, cmds] = updateRunsModel(nextModel.runs, { type: "LoadRequested" });
-      return [{ ...nextModel, runs }, [{ type: "StopDashboardPolling" }, ...cmds]];
+      return [{ ...nextModel, runs }, cmds];
     }
     case "run-detail": {
       const [runDetail, cmds] = updateRunDetailModel(nextModel.runDetail, {
         type: "LoadRequested",
         runId: route.runId
       });
-      return [{ ...nextModel, runDetail }, [{ type: "StopDashboardPolling" }, ...cmds]];
+      return [{ ...nextModel, runDetail }, cmds];
     }
     case "not-found":
-      return [nextModel, [{ type: "StopDashboardPolling" }]];
+      return [nextModel, []];
   }
 }
 
@@ -173,7 +173,6 @@ function AppProgram(): ReactElement {
     };
   }
   const commandQueueRef = useRef<Cmd[]>(initialStateRef.current.cmds);
-  const pollRef = useRef<number | null>(null);
   const [program, setProgram] = useState<{ model: AppModel; seq: number }>({
     model: initialStateRef.current.model,
     seq: 0
@@ -249,23 +248,6 @@ function AppProgram(): ReactElement {
             .catch((error) =>
               dispatch({ type: "DashboardMsg", msg: { type: "LiveFailed", error: commandFailureMessage(error) } })
             );
-          break;
-        case "StartDashboardPolling":
-          if (pollRef.current === null) {
-            pollRef.current = window.setInterval(() => {
-              void getLiveActivity()
-                .then((data) => dispatch({ type: "DashboardMsg", msg: { type: "LiveLoaded", data } }))
-                .catch((error) =>
-                  dispatch({ type: "DashboardMsg", msg: { type: "LiveFailed", error: commandFailureMessage(error) } })
-                );
-            }, 2000);
-          }
-          break;
-        case "StopDashboardPolling":
-          if (pollRef.current !== null) {
-            window.clearInterval(pollRef.current);
-            pollRef.current = null;
-          }
           break;
         case "StartSync":
           void startSync()
@@ -361,12 +343,26 @@ function AppProgram(): ReactElement {
   }, [program.seq, navigate]);
 
   useEffect(() => {
-    return () => {
-      if (pollRef.current !== null) {
-        window.clearInterval(pollRef.current);
-      }
+    if (program.model.route.kind !== "dashboard") {
+      return;
+    }
+
+    const poll = (): void => {
+      void getDashboard()
+        .then((data) => dispatch({ type: "DashboardMsg", msg: { type: "Loaded", data } }))
+        .catch((error) =>
+          dispatch({ type: "DashboardMsg", msg: { type: "LoadFailed", error: commandFailureMessage(error) } })
+        );
+      void getLiveActivity()
+        .then((data) => dispatch({ type: "DashboardMsg", msg: { type: "LiveLoaded", data } }))
+        .catch((error) =>
+          dispatch({ type: "DashboardMsg", msg: { type: "LiveFailed", error: commandFailureMessage(error) } })
+        );
     };
-  }, []);
+
+    const intervalId = window.setInterval(poll, 2000);
+    return () => window.clearInterval(intervalId);
+  }, [program.model.route.kind]);
 
   useEffect(() => {
     document.title = `${shellTitle(program.model.route)} · yt-to-audio`;

@@ -49,7 +49,9 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
 }
 
 export function getDashboard(): Promise<DashboardDto> {
-  return requestJson("/api/dashboard");
+  return requestJson(`/api/dashboard?ts=${Date.now()}`, {
+    cache: "no-store"
+  });
 }
 
 export function getChannels(): Promise<ChannelsDto> {
@@ -69,7 +71,7 @@ export function getRunDetail(runId: number): Promise<RunDetailDto> {
 }
 
 export function getLiveActivity(): Promise<LiveActivityDto> {
-  return requestJson("/api/live", {
+  return requestJson(`/api/live?ts=${Date.now()}`, {
     cache: "no-store"
   });
 }

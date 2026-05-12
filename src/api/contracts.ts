@@ -138,6 +138,9 @@ export interface RunDetailDto {
 export interface LiveActivityDto {
   state: SyncState;
   events: LiveEventDto[];
+  deviceStatus: DeviceStatus;
+  deviceReadyForExport: boolean;
+  safeToDisconnect: boolean;
 }
 
 export interface ActionResponse {

@@ -61,56 +61,73 @@ function canWriteToVolume(mountPath: string): boolean {
   }
 }
 
+function disconnectedStatus(mountPath: string | null, volumeName: string | null, reason: string): DeviceStatus {
+  return {
+    connected: false,
+    writable: false,
+    volumeName,
+    mountPath,
+    reason
+  };
+}
+
+function connectedStatus(mountPath: string, volumeName: string): DeviceStatus {
+  const writable = canWriteToVolume(mountPath);
+  return {
+    connected: true,
+    writable,
+    volumeName,
+    mountPath,
+    reason: writable ? null : `Device is mounted read-only: ${mountPath}`
+  };
+}
+
 export class DeviceSyncService {
   getStatus(): DeviceStatus {
     const configuredMountPath = config.deviceMountPath;
     if (configuredMountPath) {
-      if (existsSync(configuredMountPath)) {
-        return {
-          connected: true,
-          writable: canWriteToVolume(configuredMountPath),
-          volumeName: basename(configuredMountPath),
-          mountPath: configuredMountPath,
-          reason: canWriteToVolume(configuredMountPath) ? null : `Device is mounted read-only: ${configuredMountPath}`
-        };
+      const configuredVolumeName = basename(configuredMountPath);
+      if (!existsSync(configuredMountPath)) {
+        return disconnectedStatus(
+          configuredMountPath,
+          configuredVolumeName,
+          `Configured device mount path not found: ${configuredMountPath}`
+        );
       }
-      return {
-        connected: false,
-        writable: false,
-        volumeName: basename(configuredMountPath),
-        mountPath: configuredMountPath,
-        reason: `Configured device mount path not found: ${configuredMountPath}`
-      };
+
+      if (!isLikelyPlayerVolume(configuredMountPath)) {
+        return disconnectedStatus(
+          configuredMountPath,
+          configuredVolumeName,
+          `Configured device mount path exists but player libraries were not found: ${configuredMountPath}`
+        );
+      }
+
+      return connectedStatus(configuredMountPath, configuredVolumeName);
     }
 
     const volumesRoot = "/Volumes";
     const entries = readdirSync(volumesRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory());
-    const candidates = entries
-      .map((entry) => ({
-        volumeName: entry.name,
-        mountPath: join(volumesRoot, entry.name)
-      }))
-      .filter((entry) => isLikelyPlayerVolume(entry.mountPath));
-
-    const preferred = candidates.find((entry) => entry.volumeName === config.deviceVolumeName) ?? candidates[0];
+    const volumeEntries = entries.map((entry) => ({
+      volumeName: entry.name,
+      mountPath: join(volumesRoot, entry.name)
+    }));
+    const candidates = volumeEntries.filter((entry) => isLikelyPlayerVolume(entry.mountPath));
+    const preferredByName = volumeEntries.find((entry) => entry.volumeName === config.deviceVolumeName) ?? null;
+    const preferred = candidates.find((entry) => entry.volumeName === config.deviceVolumeName) ?? candidates[0] ?? null;
     if (!preferred) {
-      return {
-        connected: false,
-        writable: false,
-        volumeName: config.deviceVolumeName,
-        mountPath: null,
-        reason: `No mounted player volume found in ${volumesRoot}`
-      };
+      if (preferredByName) {
+        return disconnectedStatus(
+          preferredByName.mountPath,
+          preferredByName.volumeName,
+          `Mounted volume ${preferredByName.volumeName} was found, but player libraries are missing`
+        );
+      }
+
+      return disconnectedStatus(null, config.deviceVolumeName, `No mounted player volume found in ${volumesRoot}`);
     }
 
-    const writable = canWriteToVolume(preferred.mountPath);
-    return {
-      connected: true,
-      writable,
-      volumeName: preferred.volumeName,
-      mountPath: preferred.mountPath,
-      reason: writable ? null : `Device is mounted read-only: ${preferred.mountPath}`
-    };
+    return connectedStatus(preferred.mountPath, preferred.volumeName);
   }
 
   async syncPending(
