@@ -52,7 +52,9 @@ interface ActionState {
 export interface DashboardModel {
   data: RemoteData<DashboardDto>;
   live: RemoteData<LiveActivityDto>;
-  dismissedNotificationIds: string[];
+  notificationStateInitialized: boolean;
+  seenNotificationIds: string[];
+  pendingNotificationIds: string[];
   syncPlayerNote: string;
   markPendingNote: string;
   syncAction: ActionState;
@@ -164,7 +166,9 @@ export function initDashboardModel(): DashboardModel {
   return {
     data: { status: "idle", data: null, error: null },
     live: { status: "idle", data: null, error: null },
-    dismissedNotificationIds: [],
+    notificationStateInitialized: false,
+    seenNotificationIds: [],
+    pendingNotificationIds: [],
     syncPlayerNote: "",
     markPendingNote: "",
     syncAction: idleAction(),
@@ -190,9 +194,35 @@ export function updateDashboardModel(model: DashboardModel, msg: DashboardMsg): 
     case "LiveRequested":
       return [model, [{ type: "FetchLiveActivity" }]];
     case "LiveLoaded":
+      if (!model.notificationStateInitialized) {
+        return [
+          {
+            ...model,
+            notificationStateInitialized: true,
+            seenNotificationIds: msg.data.state.notifications.map((notification) => notification.id),
+            pendingNotificationIds: [],
+            live: { status: "success", data: msg.data, error: null },
+            data:
+              model.data.status === "success" && model.data.data
+                ? {
+                    status: "success",
+                    data: { ...model.data.data, syncState: msg.data.state },
+                    error: null
+                  }
+                : model.data
+          },
+          []
+        ];
+      }
+      const knownNotificationIds = new Set(model.seenNotificationIds);
+      const nextNotificationIds = msg.data.state.notifications
+        .map((notification) => notification.id)
+        .filter((id) => !knownNotificationIds.has(id));
       return [
         {
           ...model,
+          seenNotificationIds: [...model.seenNotificationIds, ...nextNotificationIds],
+          pendingNotificationIds: [...model.pendingNotificationIds, ...nextNotificationIds],
           live: { status: "success", data: msg.data, error: null },
           data:
             model.data.status === "success" && model.data.data
@@ -250,9 +280,7 @@ export function updateDashboardModel(model: DashboardModel, msg: DashboardMsg): 
       return [
         {
           ...model,
-          dismissedNotificationIds: model.dismissedNotificationIds.includes(msg.id)
-            ? model.dismissedNotificationIds
-            : [...model.dismissedNotificationIds, msg.id]
+          pendingNotificationIds: model.pendingNotificationIds.filter((id) => id !== msg.id)
         },
         []
       ];
@@ -439,15 +467,21 @@ function renderTerminal(live: LiveActivityDto | null): ReactElement {
   return <pre className="terminal">{lines.join("\n")}</pre>;
 }
 
-function activeNotification(notifications: SyncNotification[], dismissedNotificationIds: string[]): SyncNotification | null {
-  return notifications.find((notification) => !dismissedNotificationIds.includes(notification.id)) ?? null;
+function activeNotification(notifications: SyncNotification[], pendingNotificationIds: string[]): SyncNotification | null {
+  for (const id of pendingNotificationIds) {
+    const notification = notifications.find((candidate) => candidate.id === id);
+    if (notification) {
+      return notification;
+    }
+  }
+  return null;
 }
 
 export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: DashboardMsg) => void): ReactElement {
   const payload = model.data.data;
   const livePayload = model.live.data;
   const syncState = payload?.syncState;
-  const notification = livePayload ? activeNotification(livePayload.state.notifications, model.dismissedNotificationIds) : null;
+  const notification = livePayload ? activeNotification(livePayload.state.notifications, model.pendingNotificationIds) : null;
 
   return (
     <>

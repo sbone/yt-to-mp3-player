@@ -58,6 +58,26 @@ function actionResponse(started: boolean, message: string, reason: string | null
   };
 }
 
+function activeLibraryMessage(syncService: SyncService): string {
+  const state = syncService.getState().library;
+  if (state.scope === "single-channel" && state.targetHandle) {
+    return `Library run already active for ${state.targetHandle}.`;
+  }
+  if (state.targetHandle === "cookie-blocked") {
+    return "Library run already active for cookie-blocked retry.";
+  }
+  return "Library run already active.";
+}
+
+function activePlayerMessage(syncService: SyncService, deviceSyncService: DeviceSyncService): string {
+  const player = syncService.getState().player;
+  if (player.running) {
+    return `Player sync already active${player.targetVolume ? ` for ${player.targetVolume}` : ""}.`;
+  }
+  const deviceStatus = deviceSyncService.getStatus();
+  return deviceStatus.reason ? `Player sync unavailable: ${deviceStatus.reason}.` : "Player sync unavailable.";
+}
+
 export function createServer(
   db: AppDb,
   syncService: SyncService,
@@ -140,7 +160,7 @@ export function createServer(
     res.json(
       actionResponse(
         started,
-        started ? "Library refresh started." : "A library refresh is already running.",
+        started ? "Library refresh started." : activeLibraryMessage(syncService),
         started ? null : "library run already active"
       )
     );
@@ -175,7 +195,14 @@ export function createServer(
       libraryStarted: result.libraryStarted,
       playerStarted: result.playerStarted,
       reason: started ? null : "library or player sync already active",
-      message: started ? "Refresh + sync player started." : "Refresh + sync player could not start."
+      message: started
+        ? "Refresh + sync player started."
+        : [
+            !result.libraryStarted ? activeLibraryMessage(syncService) : null,
+            !result.playerStarted ? activePlayerMessage(syncService, deviceSyncService) : null
+          ]
+            .filter((value): value is string => value !== null)
+            .join(" ")
     };
     res.json(payload);
   });
@@ -187,7 +214,7 @@ export function createServer(
     res.json(
       actionResponse(
         started,
-        started ? "Player sync started." : "Player sync could not start.",
+        started ? "Player sync started." : activePlayerMessage(syncService, deviceSyncService),
         started ? null : "player sync already active or device not ready"
       )
     );
@@ -200,7 +227,7 @@ export function createServer(
     res.json(
       actionResponse(
         started,
-        started ? `Channel refresh started for ${handle}.` : `Channel refresh for ${handle} could not start.`,
+        started ? `Channel refresh started for ${handle}.` : activeLibraryMessage(syncService),
         started ? null : "library run already active"
       )
     );
@@ -212,7 +239,7 @@ export function createServer(
     res.json(
       actionResponse(
         started,
-        started ? "Cookie-blocked retry started." : "Cookie-blocked retry could not start.",
+        started ? "Cookie-blocked retry started." : activeLibraryMessage(syncService),
         started ? null : "library run already active"
       )
     );
