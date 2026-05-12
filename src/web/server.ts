@@ -50,6 +50,27 @@ function createDashboardPayload(
   };
 }
 
+function createLivePayload(
+  db: AppDb,
+  syncService: SyncService,
+  deviceSyncService: DeviceSyncService,
+  override?: Partial<Pick<LiveActivityDto, "deviceStatus" | "deviceReadyForExport" | "safeToDisconnect">>
+): LiveActivityDto {
+  const deviceStatus = deviceSyncService.getStatus();
+  const state = syncService.getState();
+  const deviceReadyForExport = deviceStatus.connected && Boolean(deviceStatus.mountPath) && deviceStatus.writable;
+  const safeToDisconnect =
+    deviceStatus.connected && !state.player.running && state.player.remaining === 0 && state.player.lastFailedCount === 0;
+
+  return {
+    state,
+    events: db.listRecentEvents(120).reverse(),
+    deviceStatus: override?.deviceStatus ?? deviceStatus,
+    deviceReadyForExport: override?.deviceReadyForExport ?? deviceReadyForExport,
+    safeToDisconnect: override?.safeToDisconnect ?? safeToDisconnect
+  };
+}
+
 function actionResponse(started: boolean, message: string, reason: string | null = null): ActionResponse {
   return {
     started,
@@ -87,6 +108,9 @@ export function createServer(
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
+  const sseClients = new Set<express.Response>();
+  let lastLivePayloadJson = "";
+  let liveOverride: Partial<Pick<LiveActivityDto, "deviceStatus" | "deviceReadyForExport" | "safeToDisconnect">> | null = null;
 
   const setNoCacheHeaders = (_req: express.Request, res: express.Response, next: express.NextFunction): void => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -155,20 +179,48 @@ export function createServer(
   });
 
   app.get("/api/live", setNoCacheHeaders, (_req, res) => {
-    const deviceStatus = deviceSyncService.getStatus();
-    const state = syncService.getState();
-    const deviceReadyForExport = deviceStatus.connected && Boolean(deviceStatus.mountPath) && deviceStatus.writable;
-    const safeToDisconnect =
-      deviceStatus.connected && !state.player.running && state.player.remaining === 0 && state.player.lastFailedCount === 0;
-    const payload: LiveActivityDto = {
-      state,
-      events: db.listRecentEvents(120).reverse(),
-      deviceStatus,
-      deviceReadyForExport,
-      safeToDisconnect
-    };
-    res.json(payload);
+    res.json(createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined));
   });
+
+  app.get("/api/events", setNoCacheHeaders, (_req, res) => {
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+    res.write("retry: 1000\n\n");
+
+    const payload = createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined);
+    res.write(`event: live\ndata: ${JSON.stringify(payload)}\n\n`);
+    sseClients.add(res);
+
+    const keepAlive = setInterval(() => {
+      res.write(": keepalive\n\n");
+    }, 15000);
+
+    res.on("close", () => {
+      clearInterval(keepAlive);
+      sseClients.delete(res);
+      res.end();
+    });
+  });
+
+  if (process.env.ENABLE_TEST_API === "1") {
+    app.post("/api/debug/live", (req, res) => {
+      const current = createLivePayload(db, syncService, deviceSyncService);
+      const body = req.body as Partial<Pick<LiveActivityDto, "deviceStatus" | "deviceReadyForExport" | "safeToDisconnect">>;
+      liveOverride = {
+        deviceStatus: body.deviceStatus ?? current.deviceStatus,
+        deviceReadyForExport: body.deviceReadyForExport ?? current.deviceReadyForExport,
+        safeToDisconnect: body.safeToDisconnect ?? current.safeToDisconnect
+      };
+      const payload = createLivePayload(db, syncService, deviceSyncService, liveOverride);
+      lastLivePayloadJson = JSON.stringify(payload);
+      const event = `event: live\ndata: ${JSON.stringify(payload)}\n\n`;
+      for (const client of sseClients) {
+        client.write(event);
+      }
+      res.json({ ok: true });
+    });
+  }
 
   app.post("/api/sync", (_req, res) => {
     const started = syncService.startSyncAll();
@@ -298,6 +350,22 @@ export function createServer(
   app.get("/channels/:handle", serveShell);
   app.get("/runs", serveShell);
   app.get("/runs/:runId", serveShell);
+
+  const publishIfChanged = (): void => {
+    const payload = createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined);
+    const nextJson = JSON.stringify(payload);
+    if (nextJson === lastLivePayloadJson) {
+      return;
+    }
+    lastLivePayloadJson = nextJson;
+    const event = `event: live\ndata: ${nextJson}\n\n`;
+    for (const client of sseClients) {
+      client.write(event);
+    }
+  };
+
+  lastLivePayloadJson = JSON.stringify(createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined));
+  setInterval(publishIfChanged, 1000);
 
   return app;
 }

@@ -76,6 +76,27 @@ export function getLiveActivity(): Promise<LiveActivityDto> {
   });
 }
 
+export function openLiveEvents(
+  onLive: (payload: LiveActivityDto) => void,
+  onError?: (message: string) => void
+): EventSource {
+  const source = new EventSource("/api/events");
+
+  source.addEventListener("live", (event) => {
+    try {
+      onLive(JSON.parse((event as MessageEvent<string>).data) as LiveActivityDto);
+    } catch (error) {
+      onError?.(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  source.onerror = () => {
+    onError?.("Live update stream disconnected.");
+  };
+
+  return source;
+}
+
 export function startSync(): Promise<ActionResponse> {
   return requestJson("/api/sync", {
     method: "POST"

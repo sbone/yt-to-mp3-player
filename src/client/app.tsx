@@ -10,6 +10,7 @@ import {
   getRunDetail,
   getRuns,
   markPendingAsExported,
+  openLiveEvents,
   retryCookieErrors,
   startChannelSync,
   startPlayerSync,
@@ -347,21 +348,14 @@ function AppProgram(): ReactElement {
       return;
     }
 
-    const poll = (): void => {
-      void getDashboard()
-        .then((data) => dispatch({ type: "DashboardMsg", msg: { type: "Loaded", data } }))
-        .catch((error) =>
-          dispatch({ type: "DashboardMsg", msg: { type: "LoadFailed", error: commandFailureMessage(error) } })
-        );
-      void getLiveActivity()
-        .then((data) => dispatch({ type: "DashboardMsg", msg: { type: "LiveLoaded", data } }))
-        .catch((error) =>
-          dispatch({ type: "DashboardMsg", msg: { type: "LiveFailed", error: commandFailureMessage(error) } })
-        );
-    };
+    const source = openLiveEvents(
+      (data) => dispatch({ type: "DashboardMsg", msg: { type: "LiveLoaded", data } }),
+      (message) => dispatch({ type: "DashboardMsg", msg: { type: "LiveFailed", error: message } })
+    );
 
-    const intervalId = window.setInterval(poll, 2000);
-    return () => window.clearInterval(intervalId);
+    return () => {
+      source.close();
+    };
   }, [program.model.route.kind]);
 
   useEffect(() => {

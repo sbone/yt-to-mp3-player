@@ -22,6 +22,30 @@ test.describe("dev SPA smoke", () => {
     expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
   });
 
+  test("dashboard updates from SSE without refresh", async ({ page, request }) => {
+    const consoleErrors = collectConsoleErrors(page);
+
+    await page.goto("/");
+    await expect(page.getByText("Device status:")).toBeVisible();
+
+    await request.post("/api/debug/live", {
+      data: {
+        deviceStatus: {
+          connected: true,
+          writable: true,
+          volumeName: "TEST-PLAYER",
+          mountPath: "/Volumes/TEST-PLAYER",
+          reason: null
+        },
+        deviceReadyForExport: true,
+        safeToDisconnect: true
+      }
+    });
+
+    await expect(page.getByText("connected (TEST-PLAYER)")).toBeVisible();
+    expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
+  });
+
   test("channels and runs routes render directly", async ({ page, request }) => {
     const consoleErrors = collectConsoleErrors(page);
 
