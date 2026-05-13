@@ -3,6 +3,7 @@ import { DeviceSyncService } from "../deviceSync.js";
 import { reconcilePendingAgainstDevice } from "../deviceReconcile.js";
 import { channelUrlForHandle, loadChannelSources } from "../channelSource.js";
 import { Logger } from "../logger.js";
+import { existsSync, statSync } from "node:fs";
 import type { ChannelRecord, SyncCounters } from "../types.js";
 import { downloadVideo, discoverChannel, isCookieAuthError } from "./ytDlp.js";
 import { ExistingDownloadIndex } from "./fileIndex.js";
@@ -35,6 +36,12 @@ export interface PlayerSyncState {
   remaining: number;
   currentItemTitle: string | null;
   nextPendingItem: PendingExportItem | null;
+  totalItems: number;
+  processedItems: number;
+  totalBytes: number;
+  completedBytes: number;
+  currentItemBytesCopied: number;
+  currentItemBytesTotal: number | null;
   lastCompletedAt: string | null;
   lastSummary: string | null;
   lastFailedCount: number;
@@ -66,6 +73,17 @@ function nextCounters(base: SyncCounters, delta: Partial<SyncCounters>): SyncCou
   };
 }
 
+function safeFileSize(item: PendingExportItem): number {
+  if (!existsSync(item.local_path)) {
+    return 0;
+  }
+  try {
+    return statSync(item.local_path).size;
+  } catch {
+    return 0;
+  }
+}
+
 export class SyncService {
   private state: SyncState = {
     library: {
@@ -87,6 +105,12 @@ export class SyncService {
       remaining: 0,
       currentItemTitle: null,
       nextPendingItem: null,
+      totalItems: 0,
+      processedItems: 0,
+      totalBytes: 0,
+      completedBytes: 0,
+      currentItemBytesCopied: 0,
+      currentItemBytesTotal: null,
       lastCompletedAt: null,
       lastSummary: null,
       lastFailedCount: 0
@@ -420,6 +444,12 @@ export class SyncService {
       remaining: 0,
       currentItemTitle: null,
       nextPendingItem: null,
+      totalItems: 0,
+      processedItems: 0,
+      totalBytes: 0,
+      completedBytes: 0,
+      currentItemBytesCopied: 0,
+      currentItemBytesTotal: null,
       lastSummary: null
     });
 
@@ -449,7 +479,10 @@ export class SyncService {
         lastCompletedAt: new Date().toISOString(),
         lastSummary: summary,
         currentItemTitle: null,
-        nextPendingItem: null
+        nextPendingItem: null,
+        completedBytes: this.state.player.totalBytes,
+        currentItemBytesCopied: 0,
+        currentItemBytesTotal: null
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -474,7 +507,10 @@ export class SyncService {
         lastSummary: message,
         lastFailedCount: Math.max(this.state.player.lastFailedCount, 1),
         currentItemTitle: null,
-        nextPendingItem: null
+        nextPendingItem: null,
+        currentItemBytesCopied: 0,
+        currentItemBytesTotal: null,
+        completedBytes: this.state.player.completedBytes
       });
     } finally {
       this.setPlayerState({
@@ -484,7 +520,11 @@ export class SyncService {
         targetVolume: device.volumeName,
         note: null,
         currentItemTitle: null,
-        nextPendingItem: null
+        nextPendingItem: null,
+        totalBytes: 0,
+        completedBytes: 0,
+        currentItemBytesCopied: 0,
+        currentItemBytesTotal: null
       });
     }
   }
@@ -539,6 +579,12 @@ export class SyncService {
     }
 
     const pendingAfterReconcile = this.db.listPendingExportVideos(5000);
+    const totalItems = reconciledIds.length + pendingAfterReconcile.length;
+    const reconciledBytes = pendingBefore
+      .filter((item) => reconciledIds.includes(item.id))
+      .reduce((sum, item) => sum + safeFileSize(item), 0);
+    const pendingBytes = pendingAfterReconcile.reduce((sum, item) => sum + safeFileSize(item), 0);
+    const totalBytes = reconciledBytes + pendingBytes;
     this.setPlayerState({
       reconciled: reconciledIds.length,
       copied: 0,
@@ -546,6 +592,12 @@ export class SyncService {
       remaining: pendingAfterReconcile.length,
       currentItemTitle: null,
       nextPendingItem: pendingAfterReconcile[0] ?? null,
+      totalItems,
+      processedItems: reconciledIds.length,
+      totalBytes,
+      completedBytes: reconciledBytes,
+      currentItemBytesCopied: 0,
+      currentItemBytesTotal: null,
       lastFailedCount: 0
     });
     if (pendingAfterReconcile.length === 0) {
@@ -566,13 +618,21 @@ export class SyncService {
       return message;
     }
 
+    let completedPendingBytes = 0;
     const copyOutcome = await this.deviceSyncService.syncPending(pendingAfterReconcile, (progress) => {
+      if (progress.event !== "copying" && progress.currentItem) {
+        completedPendingBytes += progress.currentItemBytesTotal ?? safeFileSize(progress.currentItem);
+      }
       this.setPlayerState({
         copied: progress.copied,
         failed: progress.failed,
         remaining: progress.remaining,
         currentItemTitle: progress.event === "copying" ? progress.currentItem?.title ?? null : null,
         nextPendingItem: progress.nextItem,
+        processedItems: reconciledIds.length + progress.processed,
+        completedBytes: reconciledBytes + completedPendingBytes,
+        currentItemBytesCopied: progress.event === "copying" ? progress.currentItemBytesCopied : 0,
+        currentItemBytesTotal: progress.event === "copying" ? progress.currentItemBytesTotal : null,
         lastFailedCount: progress.failed
       });
       if (progress.event !== "copying" && progress.currentItem) {
@@ -620,6 +680,11 @@ export class SyncService {
       remaining: copyOutcome.failed.length + copyOutcome.missingSource.length,
       currentItemTitle: null,
       nextPendingItem: null,
+      processedItems: totalItems,
+      totalBytes,
+      completedBytes: totalBytes,
+      currentItemBytesCopied: 0,
+      currentItemBytesTotal: null,
       lastFailedCount: copyOutcome.failed.length
     });
     return summary;

@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { Transform } from "node:stream";
 import { config } from "./config.js";
 
 export interface PendingExportItem {
@@ -46,6 +47,8 @@ export interface DeviceSyncProgressSnapshot {
   remaining: number;
   currentItem: PendingExportItem | null;
   nextItem: PendingExportItem | null;
+  currentItemBytesCopied: number;
+  currentItemBytesTotal: number | null;
   event: "copying" | "copied" | "already-present" | "missing-source" | "failed";
 }
 
@@ -151,7 +154,9 @@ export class DeviceSyncService {
     const emitProgress = (
       event: DeviceSyncProgressSnapshot["event"],
       currentItem: PendingExportItem | null,
-      nextItem: PendingExportItem | null
+      nextItem: PendingExportItem | null,
+      currentItemBytesCopied: number,
+      currentItemBytesTotal: number | null
     ): void => {
       onProgress?.({
         total: items.length,
@@ -163,6 +168,8 @@ export class DeviceSyncService {
           items.length - (outcome.copied.length + outcome.alreadyPresent.length + outcome.missingSource.length + outcome.failed.length),
         currentItem,
         nextItem,
+        currentItemBytesCopied,
+        currentItemBytesTotal,
         event
       });
     };
@@ -171,7 +178,7 @@ export class DeviceSyncService {
       const nextItem = items[index + 1] ?? null;
       if (!existsSync(item.local_path)) {
         outcome.missingSource.push(item);
-        emitProgress("missing-source", item, nextItem);
+        emitProgress("missing-source", item, nextItem, 0, null);
         continue;
       }
 
@@ -182,33 +189,40 @@ export class DeviceSyncService {
 
       try {
         mkdirSync(targetDir, { recursive: true });
-        emitProgress("copying", item, nextItem);
+        const sourceSize = statSync(item.local_path).size;
+        emitProgress("copying", item, nextItem, 0, sourceSize);
         if (existsSync(targetPath)) {
-          const sourceSize = statSync(item.local_path).size;
           const targetSize = statSync(targetPath).size;
           if (sourceSize === targetSize) {
             outcome.alreadyPresent.push(item);
-            emitProgress("already-present", item, nextItem);
+            emitProgress("already-present", item, nextItem, sourceSize, sourceSize);
             continue;
           }
         }
         rmSync(tempTargetPath, { force: true });
-        await pipeline(createReadStream(item.local_path), createWriteStream(tempTargetPath));
-        const sourceSize = statSync(item.local_path).size;
+        let copiedBytes = 0;
+        const progressTap = new Transform({
+          transform(chunk, _encoding, callback) {
+            copiedBytes += chunk.length;
+            emitProgress("copying", item, nextItem, copiedBytes, sourceSize);
+            callback(null, chunk);
+          }
+        });
+        await pipeline(createReadStream(item.local_path), progressTap, createWriteStream(tempTargetPath));
         const copiedSize = statSync(tempTargetPath).size;
         if (sourceSize !== copiedSize) {
           throw new Error(`Copied file size mismatch: source=${sourceSize} target=${copiedSize}`);
         }
         renameSync(tempTargetPath, targetPath);
         outcome.copied.push(item);
-        emitProgress("copied", item, nextItem);
+        emitProgress("copied", item, nextItem, sourceSize, sourceSize);
       } catch (error) {
         rmSync(tempTargetPath, { force: true });
         outcome.failed.push({
           item,
           message: error instanceof Error ? error.message : String(error)
         });
-        emitProgress("failed", item, nextItem);
+        emitProgress("failed", item, nextItem, 0, null);
       }
     }
 

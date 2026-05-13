@@ -48,6 +48,12 @@ export interface PlayerSyncState {
   remaining: number;
   currentItemTitle: string | null;
   nextPendingItem: PendingExportDto | null;
+  totalItems: number;
+  processedItems: number;
+  totalBytes: number;
+  completedBytes: number;
+  currentItemBytesCopied: number;
+  currentItemBytesTotal: number | null;
   lastCompletedAt: string | null;
   lastSummary: string | null;
   lastFailedCount: number;

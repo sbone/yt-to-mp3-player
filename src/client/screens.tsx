@@ -431,6 +431,49 @@ function fmtDate(value: string | null): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+function fmtBytes(value: number | null): string {
+  if (value === null) {
+    return "n/a";
+  }
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = value;
+  let unitIndex = -1;
+  do {
+    size /= 1024;
+    unitIndex += 1;
+  } while (size >= 1024 && unitIndex < units.length - 1);
+  return `${size.toFixed(size >= 100 ? 0 : size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+function progressPercent(completed: number, total: number): number {
+  if (total <= 0) {
+    return 0;
+  }
+  return clampPercent((completed / total) * 100);
+}
+
+function renderProgressBar(label: string, percent: number, details: string): ReactElement {
+  return (
+    <div className="progress-block">
+      <div className="progress-label-row">
+        <span className="progress-label">{label}</span>
+        <span className="progress-value">{Math.round(percent)}%</span>
+      </div>
+      <div className="progress-track" aria-hidden="true">
+        <div className="progress-fill" style={{ width: `${percent}%` }} />
+      </div>
+      <p className="small mono progress-details">{details}</p>
+    </div>
+  );
+}
+
 function badgeClass(status: string): string {
   if (status === "downloaded" || status === "success") return "badge badge-ok";
   if (status === "cookie_blocked" || status === "warn" || status === "partial" || status === "running") return "badge badge-warn";
@@ -581,6 +624,11 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
   const nextPendingTrack = syncState?.player.nextPendingItem ?? pendingExport[0] ?? null;
   const cookieBlockedCount = payload?.cookieBlocked?.length ?? 0;
   const notification = livePayload ? activeNotification(livePayload.state.notifications, model.pendingNotificationIds) : null;
+  const currentItemBytesCopied = syncState?.player.currentItemBytesCopied ?? 0;
+  const currentItemBytesTotal = syncState?.player.currentItemBytesTotal ?? null;
+  const overallCompletedBytes = (syncState?.player.completedBytes ?? 0) + currentItemBytesCopied;
+  const overallPercent = progressPercent(overallCompletedBytes, syncState?.player.totalBytes ?? 0);
+  const currentFilePercent = progressPercent(currentItemBytesCopied, currentItemBytesTotal ?? 0);
 
   return (
     <>
@@ -683,6 +731,20 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
               <strong>remaining={syncState?.player.remaining ?? 0}</strong>
               {syncState?.player.currentItemTitle ? `, current=${syncState.player.currentItemTitle}` : ""}
             </p>
+            {syncState?.player.running && (syncState.player.totalItems ?? 0) > 0
+              ? renderProgressBar(
+                  "Overall player sync",
+                  overallPercent,
+                  `${fmtBytes(overallCompletedBytes)} / ${fmtBytes(syncState.player.totalBytes ?? 0)}`
+                )
+              : null}
+            {syncState?.player.running && syncState.player.currentItemTitle && (syncState.player.currentItemBytesTotal ?? 0) > 0
+              ? renderProgressBar(
+                  `Copying ${syncState.player.currentItemTitle}`,
+                  currentFilePercent,
+                  `${fmtBytes(currentItemBytesCopied)} / ${fmtBytes(currentItemBytesTotal)}`
+                )
+              : null}
             {nextPendingTrack ? (
               <p className="small">
                 Next up: <strong>{nextPendingTrack.title}</strong>
