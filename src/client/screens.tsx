@@ -668,110 +668,121 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
         {renderRemoteError(model.data.error)}
       </section>
 
-      <section className="card" {...{ "box-": "round" }}>
-        <h2>Sync State</h2>
-        <p className="mono">library: {syncState?.library.running ? "running" : "idle"}</p>
-        <p className="mono">library run: {syncState?.library.runId ?? "n/a"}</p>
-        <p className="mono">library scope: {syncState?.library.scope ?? "n/a"}</p>
-        <p className="mono">library target: {syncState?.library.targetHandle ?? "all channels"}</p>
-        <p className="mono">library started: {fmtDate(syncState?.library.startedAt ?? null)}</p>
-        <p className="mono">player: {syncState?.player.running ? "running" : "idle"}</p>
-        <p className="mono">player run: {syncState?.player.runId ?? "n/a"}</p>
-        <p className="mono">player volume: {syncState?.player.targetVolume ?? "n/a"}</p>
-        <p className="mono">player started: {fmtDate(syncState?.player.startedAt ?? null)}</p>
-        <p className="mono">
-          player progress: reconciled={syncState?.player.reconciled ?? 0} copied={syncState?.player.copied ?? 0} failed=
-          {syncState?.player.failed ?? 0} remaining={syncState?.player.remaining ?? 0}
-        </p>
-        <p className="mono">player current: {syncState?.player.currentItemTitle ?? "idle"}</p>
-      </section>
-
-      <section className="card" {...{ "box-": "round" }}>
-        <h2>MP3 Player Export</h2>
-        <p className="small">
-          Tracks ready to copy now: <strong>{pendingExportCount}</strong>
-        </p>
-        <p className="small">
-          Device status:{" "}
-          <strong>{deviceStatus?.connected ? `connected (${deviceStatus.volumeName})` : "not connected"}</strong>{" "}
-          {deviceStatus?.mountPath ? <>at <code>{deviceStatus.mountPath}</code></> : null}
-        </p>
-        <p className="small">
-          Disconnect status:{" "}
-          <strong>
-            {safeToDisconnect
-              ? "Safe to disconnect"
-              : syncState?.player.running
-                ? "Do not disconnect during player sync"
-                : "Not ready to disconnect"}
-          </strong>
-        </p>
-        {deviceStatus?.reason ? <p className="small">Detection note: {deviceStatus.reason}</p> : null}
-        <p className="small">
-          Last device update: <strong>{payload?.latestDeviceSync ? fmtDate(payload.latestDeviceSync.created_at) : "never"}</strong>{" "}
-          {payload?.latestDeviceSync ? `(tracks: ${payload.latestDeviceSync.item_count})` : ""}
-        </p>
-        {syncState?.player.lastSummary ? <p className="small">Last player sync summary: {syncState.player.lastSummary}</p> : null}
-        <p className="small">
-          Player sync: <strong>reconciled={syncState?.player.reconciled ?? 0}</strong>,{" "}
-          <strong>copied={syncState?.player.copied ?? 0}</strong>, <strong>failed={syncState?.player.failed ?? 0}</strong>,{" "}
-          <strong>remaining={syncState?.player.remaining ?? 0}</strong>
-          {syncState?.player.currentItemTitle ? `, current=${syncState.player.currentItemTitle}` : ""}
-        </p>
-        <div className="actions">
-          <div className="inline-form">
-            <input
-              {...{ "is-": "input" }}
-              name="sync-player-note"
-              type="text"
-              placeholder="Optional note (e.g. auto-copied to AGP-A02T)"
-              value={model.syncPlayerNote}
-              onChange={(event) => dispatch({ type: "SyncPlayerNoteChanged", note: event.target.value })}
-            />
-            {wrapWithTooltip(
-              <button
-                type="button"
-                {...{ "box-": "round", "variant-": "success" }}
-                disabled={!deviceReadyForExport || playerActive || model.syncPlayerAction.status === "working"}
-                onClick={() => dispatch({ type: "SyncPlayerRequested" })}
-              >
-                {renderButtonLabel(
-                  "Sync Player Now",
-                  isPlayerOnlyRun ? "Player Sync Active..." : "Syncing Player...",
-                  isPlayerOnlyRun || model.syncPlayerAction.status === "working"
+      <section className="dashboard-grid">
+        <div className="dashboard-stack">
+          <section className="card" {...{ "box-": "round" }}>
+            <h2>MP3 Player Export</h2>
+            <p className="small">
+              Tracks ready to copy now: <strong>{pendingExportCount}</strong>
+            </p>
+            <p className="small">
+              Device status:{" "}
+              <strong>{deviceStatus?.connected ? `connected (${deviceStatus.volumeName})` : "not connected"}</strong>{" "}
+              {deviceStatus?.mountPath ? <>at <code>{deviceStatus.mountPath}</code></> : null}
+            </p>
+            <p className="small">
+              Disconnect status:{" "}
+              <strong>
+                {safeToDisconnect
+                  ? "Safe to disconnect"
+                  : syncState?.player.running
+                    ? "Do not disconnect during player sync"
+                    : "Not ready to disconnect"}
+              </strong>
+            </p>
+            {deviceStatus?.reason ? <p className="small">Detection note: {deviceStatus.reason}</p> : null}
+            <p className="small">
+              Last device update: <strong>{payload?.latestDeviceSync ? fmtDate(payload.latestDeviceSync.created_at) : "never"}</strong>{" "}
+              {payload?.latestDeviceSync ? `(tracks: ${payload.latestDeviceSync.item_count})` : ""}
+            </p>
+            {syncState?.player.lastSummary ? <p className="small">Last player sync summary: {syncState.player.lastSummary}</p> : null}
+            <p className="small">
+              Player sync: <strong>reconciled={syncState?.player.reconciled ?? 0}</strong>,{" "}
+              <strong>copied={syncState?.player.copied ?? 0}</strong>, <strong>failed={syncState?.player.failed ?? 0}</strong>,{" "}
+              <strong>remaining={syncState?.player.remaining ?? 0}</strong>
+              {syncState?.player.currentItemTitle ? `, current=${syncState.player.currentItemTitle}` : ""}
+            </p>
+            <div className="actions">
+              <div className="inline-form">
+                <input
+                  {...{ "is-": "input" }}
+                  name="sync-player-note"
+                  type="text"
+                  placeholder="Optional note (e.g. auto-copied to AGP-A02T)"
+                  value={model.syncPlayerNote}
+                  onChange={(event) => dispatch({ type: "SyncPlayerNoteChanged", note: event.target.value })}
+                />
+                {wrapWithTooltip(
+                  <button
+                    type="button"
+                    {...{ "box-": "round", "variant-": "success" }}
+                    disabled={!deviceReadyForExport || playerActive || model.syncPlayerAction.status === "working"}
+                    onClick={() => dispatch({ type: "SyncPlayerRequested" })}
+                  >
+                    {renderButtonLabel(
+                      "Sync Player Now",
+                      isPlayerOnlyRun ? "Player Sync Active..." : "Syncing Player...",
+                      isPlayerOnlyRun || model.syncPlayerAction.status === "working"
+                    )}
+                  </button>,
+                  playerDisabledReason
                 )}
-              </button>,
-              playerDisabledReason
-            )}
-          </div>
-          <div className="inline-form">
-            <input
-              {...{ "is-": "input" }}
-              name="mark-pending-note"
-              type="text"
-              placeholder="Optional note (e.g. copied to SanDisk)"
-              value={model.markPendingNote}
-              onChange={(event) => dispatch({ type: "MarkPendingNoteChanged", note: event.target.value })}
-            />
-            <button
-              type="button"
-              {...{ "box-": "round", "variant-": "foreground1" }}
-              disabled={model.markPendingAction.status === "working"}
-              onClick={() => dispatch({ type: "MarkPendingRequested" })}
-            >
-              {renderButtonLabel(
-                "Mark Pending As Exported",
-                "Marking Pending...",
-                model.markPendingAction.status === "working"
-              )}
-            </button>
-          </div>
-          <a className="button-link" href="/device-sync/pending-manifest.txt" {...{ "is-": "button", "box-": "round" }}>
-            Download Pending Manifest
-          </a>
+              </div>
+              <div className="inline-form">
+                <input
+                  {...{ "is-": "input" }}
+                  name="mark-pending-note"
+                  type="text"
+                  placeholder="Optional note (e.g. copied to SanDisk)"
+                  value={model.markPendingNote}
+                  onChange={(event) => dispatch({ type: "MarkPendingNoteChanged", note: event.target.value })}
+                />
+                <button
+                  type="button"
+                  {...{ "box-": "round", "variant-": "foreground1" }}
+                  disabled={model.markPendingAction.status === "working"}
+                  onClick={() => dispatch({ type: "MarkPendingRequested" })}
+                >
+                  {renderButtonLabel(
+                    "Mark Pending As Exported",
+                    "Marking Pending...",
+                    model.markPendingAction.status === "working"
+                  )}
+                </button>
+              </div>
+              <a className="button-link" href="/device-sync/pending-manifest.txt" {...{ "is-": "button", "box-": "round" }}>
+                Download Pending Manifest
+              </a>
+            </div>
+            {renderActionState(model.syncPlayerAction)}
+            {renderActionState(model.markPendingAction)}
+          </section>
+
+          <section className="card" {...{ "box-": "round" }}>
+            <h2>Sync State</h2>
+            <p className="mono">library: {syncState?.library.running ? "running" : "idle"}</p>
+            <p className="mono">library run: {syncState?.library.runId ?? "n/a"}</p>
+            <p className="mono">library scope: {syncState?.library.scope ?? "n/a"}</p>
+            <p className="mono">library target: {syncState?.library.targetHandle ?? "all channels"}</p>
+            <p className="mono">library started: {fmtDate(syncState?.library.startedAt ?? null)}</p>
+            <p className="mono">player: {syncState?.player.running ? "running" : "idle"}</p>
+            <p className="mono">player run: {syncState?.player.runId ?? "n/a"}</p>
+            <p className="mono">player volume: {syncState?.player.targetVolume ?? "n/a"}</p>
+            <p className="mono">player started: {fmtDate(syncState?.player.startedAt ?? null)}</p>
+            <p className="mono">
+              player progress: reconciled={syncState?.player.reconciled ?? 0} copied={syncState?.player.copied ?? 0} failed=
+              {syncState?.player.failed ?? 0} remaining={syncState?.player.remaining ?? 0}
+            </p>
+            <p className="mono">player current: {syncState?.player.currentItemTitle ?? "idle"}</p>
+          </section>
         </div>
-        {renderActionState(model.syncPlayerAction)}
-        {renderActionState(model.markPendingAction)}
+
+        <section className="card dashboard-live-card" {...{ "box-": "round" }}>
+          <h2>Live Activity</h2>
+          <p className="small">Live updates stream over SSE while this page is open.</p>
+          {renderRemoteError(model.live.error)}
+          {renderTerminal(livePayload)}
+        </section>
       </section>
 
       <section className="card" {...{ "box-": "round" }}>
@@ -909,13 +920,6 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
             ))}
           </tbody>
         </table>
-      </section>
-
-      <section className="card" {...{ "box-": "round" }}>
-        <h2>Live Activity</h2>
-        <p className="small">Live updates stream over SSE while this page is open.</p>
-        {renderRemoteError(model.live.error)}
-        {renderTerminal(livePayload)}
       </section>
 
       {notification ? (
