@@ -162,7 +162,7 @@ function settleActionAfterProcess(state: ActionState, running: boolean): ActionS
     return state;
   }
   if (state.awaitingActive) {
-    return running ? workingAction(false) : state;
+    return running ? workingAction(false) : idleAction();
   }
   if (running) {
     return state;
