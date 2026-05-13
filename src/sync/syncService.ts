@@ -5,7 +5,7 @@ import { channelUrlForHandle, loadChannelSources } from "../channelSource.js";
 import { Logger } from "../logger.js";
 import { existsSync, statSync } from "node:fs";
 import type { ChannelRecord, SyncCounters } from "../types.js";
-import { downloadVideo, discoverChannel, isCookieAuthError } from "./ytDlp.js";
+import { downloadVideo, discoverChannel, isCookieAuthError, type DownloadProgress } from "./ytDlp.js";
 import { ExistingDownloadIndex } from "./fileIndex.js";
 import { config } from "../config.js";
 import type { PendingExportItem } from "../deviceSync.js";
@@ -22,6 +22,13 @@ export interface LibrarySyncState {
   runId: number | null;
   scope: "all" | "single-channel" | null;
   targetHandle: string | null;
+  currentItemTitle: string | null;
+  currentItemPercent: number | null;
+  currentItemDownloadedBytes: number | null;
+  currentItemTotalBytes: number | null;
+  currentItemPhase: "downloading" | "postprocessing" | null;
+  currentItemSpeed: string | null;
+  currentItemEta: string | null;
 }
 
 export interface PlayerSyncState {
@@ -91,7 +98,14 @@ export class SyncService {
       startedAt: null,
       runId: null,
       scope: null,
-      targetHandle: null
+      targetHandle: null,
+      currentItemTitle: null,
+      currentItemPercent: null,
+      currentItemDownloadedBytes: null,
+      currentItemTotalBytes: null,
+      currentItemPhase: null,
+      currentItemSpeed: null,
+      currentItemEta: null
     },
     player: {
       running: false,
@@ -212,7 +226,14 @@ export class SyncService {
       startedAt: new Date().toISOString(),
       runId,
       scope: "all",
-      targetHandle: null
+      targetHandle: null,
+      currentItemTitle: null,
+      currentItemPercent: null,
+      currentItemDownloadedBytes: null,
+      currentItemTotalBytes: null,
+      currentItemPhase: null,
+      currentItemSpeed: null,
+      currentItemEta: null
     });
 
     let totals = { ...ZERO_COUNTERS };
@@ -265,7 +286,14 @@ export class SyncService {
         startedAt: null,
         runId: null,
         scope: null,
-        targetHandle: null
+        targetHandle: null,
+        currentItemTitle: null,
+        currentItemPercent: null,
+        currentItemDownloadedBytes: null,
+        currentItemTotalBytes: null,
+        currentItemPhase: null,
+        currentItemSpeed: null,
+        currentItemEta: null
       });
     }
   }
@@ -280,7 +308,14 @@ export class SyncService {
       startedAt: new Date().toISOString(),
       runId,
       scope: "single-channel",
-      targetHandle: handle
+      targetHandle: handle,
+      currentItemTitle: null,
+      currentItemPercent: null,
+      currentItemDownloadedBytes: null,
+      currentItemTotalBytes: null,
+      currentItemPhase: null,
+      currentItemSpeed: null,
+      currentItemEta: null
     });
 
     this.logger.info(`run=${runId} sync-channel started handle=${handle}`);
@@ -322,7 +357,14 @@ export class SyncService {
         startedAt: null,
         runId: null,
         scope: null,
-        targetHandle: null
+        targetHandle: null,
+        currentItemTitle: null,
+        currentItemPercent: null,
+        currentItemDownloadedBytes: null,
+        currentItemTotalBytes: null,
+        currentItemPhase: null,
+        currentItemSpeed: null,
+        currentItemEta: null
       });
     }
   }
@@ -754,7 +796,26 @@ export class SyncService {
         }
 
         try {
-          const result = await downloadVideo(item.youtubeVideoId);
+          this.setLibraryState({
+            currentItemTitle: item.title,
+            currentItemPercent: 0,
+            currentItemDownloadedBytes: 0,
+            currentItemTotalBytes: null,
+            currentItemPhase: "downloading",
+            currentItemSpeed: null,
+            currentItemEta: null
+          });
+          const result = await downloadVideo(item.youtubeVideoId, (progress: DownloadProgress) => {
+            this.setLibraryState({
+              currentItemTitle: item.title,
+              currentItemPercent: progress.percent,
+              currentItemDownloadedBytes: progress.downloadedBytes,
+              currentItemTotalBytes: progress.totalBytes,
+              currentItemPhase: progress.phase,
+              currentItemSpeed: progress.speed,
+              currentItemEta: progress.eta
+            });
+          });
           if (result.status === "downloaded") {
             this.db.markVideoDownloaded(upsert.id, result.localPath, result.fileSize);
             this.db.addEvent(
@@ -804,6 +865,16 @@ export class SyncService {
             counters = nextCounters(counters, { failed: 1 });
             ok = false;
           }
+        } finally {
+          this.setLibraryState({
+            currentItemTitle: null,
+            currentItemPercent: null,
+            currentItemDownloadedBytes: null,
+            currentItemTotalBytes: null,
+            currentItemPhase: null,
+            currentItemSpeed: null,
+            currentItemEta: null
+          });
         }
       }
 

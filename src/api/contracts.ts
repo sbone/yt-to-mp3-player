@@ -34,6 +34,13 @@ export interface LibrarySyncState {
   runId: number | null;
   scope: "all" | "single-channel" | null;
   targetHandle: string | null;
+  currentItemTitle: string | null;
+  currentItemPercent: number | null;
+  currentItemDownloadedBytes: number | null;
+  currentItemTotalBytes: number | null;
+  currentItemPhase: "downloading" | "postprocessing" | null;
+  currentItemSpeed: string | null;
+  currentItemEta: string | null;
 }
 
 export interface PlayerSyncState {

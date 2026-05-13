@@ -629,6 +629,10 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
   const overallCompletedBytes = (syncState?.player.completedBytes ?? 0) + currentItemBytesCopied;
   const overallPercent = progressPercent(overallCompletedBytes, syncState?.player.totalBytes ?? 0);
   const currentFilePercent = progressPercent(currentItemBytesCopied, currentItemBytesTotal ?? 0);
+  const libraryItemBytesCopied = syncState?.library.currentItemDownloadedBytes ?? 0;
+  const libraryItemBytesTotal = syncState?.library.currentItemTotalBytes ?? null;
+  const libraryCurrentPercent =
+    syncState?.library.currentItemPercent ?? progressPercent(libraryItemBytesCopied, libraryItemBytesTotal ?? 0);
 
   return (
     <>
@@ -694,6 +698,20 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
         {renderActionState(model.syncAction)}
         {renderActionState(model.syncAndExportAction)}
         {renderActionState(model.retryAction)}
+        {syncState?.library.running && syncState.library.currentItemTitle && libraryItemBytesTotal
+          ? renderProgressBar(
+              `Downloading ${syncState.library.currentItemTitle}`,
+              libraryCurrentPercent,
+              [
+                `${fmtBytes(libraryItemBytesCopied)} / ${fmtBytes(libraryItemBytesTotal)}`,
+                syncState.library.currentItemSpeed ? `at ${syncState.library.currentItemSpeed}` : null,
+                syncState.library.currentItemEta ? `ETA ${syncState.library.currentItemEta}` : null,
+                syncState.library.currentItemPhase === "postprocessing" ? "post-processing" : null
+              ]
+                .filter((part): part is string => Boolean(part))
+                .join(" · ")
+            )
+          : null}
         {renderRemoteError(model.data.error)}
       </section>
 
