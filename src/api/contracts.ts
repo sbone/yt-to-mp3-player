@@ -47,6 +47,7 @@ export interface PlayerSyncState {
   failed: number;
   remaining: number;
   currentItemTitle: string | null;
+  nextPendingItem: PendingExportDto | null;
   lastCompletedAt: string | null;
   lastSummary: string | null;
   lastFailedCount: number;
@@ -141,6 +142,8 @@ export interface LiveActivityDto {
   deviceStatus: DeviceStatus;
   deviceReadyForExport: boolean;
   safeToDisconnect: boolean;
+  latestDeviceSync: DeviceSyncRecord | null;
+  pendingExport: PendingExportDto[];
 }
 
 export interface ActionResponse {

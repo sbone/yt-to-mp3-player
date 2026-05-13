@@ -575,8 +575,10 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
   const deviceReadyForExport = livePayload?.deviceReadyForExport ?? payload?.deviceReadyForExport ?? false;
   const playerDisabledReason = !deviceReadyForExport ? deviceStatus?.reason ?? "Player not available." : null;
   const safeToDisconnect = livePayload?.safeToDisconnect ?? payload?.safeToDisconnect ?? false;
-  const pendingExportCount = payload?.pendingExport?.length ?? 0;
-  const nextPendingTrack = payload?.pendingExport[0] ?? null;
+  const latestDeviceSync = livePayload?.latestDeviceSync ?? payload?.latestDeviceSync ?? null;
+  const pendingExport = livePayload?.pendingExport ?? payload?.pendingExport ?? [];
+  const pendingExportCount = pendingExport.length;
+  const nextPendingTrack = syncState?.player.nextPendingItem ?? pendingExport[0] ?? null;
   const cookieBlockedCount = payload?.cookieBlocked?.length ?? 0;
   const notification = livePayload ? activeNotification(livePayload.state.notifications, model.pendingNotificationIds) : null;
 
@@ -671,8 +673,8 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
             </p>
             {deviceStatus?.reason ? <p className="small">Detection note: {deviceStatus.reason}</p> : null}
             <p className="small">
-              Last device update: <strong>{payload?.latestDeviceSync ? fmtDate(payload.latestDeviceSync.created_at) : "never"}</strong>{" "}
-              {payload?.latestDeviceSync ? `(tracks: ${payload.latestDeviceSync.item_count})` : ""}
+              Last device update: <strong>{latestDeviceSync ? fmtDate(latestDeviceSync.created_at) : "never"}</strong>{" "}
+              {latestDeviceSync ? `(tracks: ${latestDeviceSync.item_count})` : ""}
             </p>
             {syncState?.player.lastSummary ? <p className="small">Last player sync summary: {syncState.player.lastSummary}</p> : null}
             <p className="small">

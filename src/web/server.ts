@@ -58,6 +58,8 @@ function createLivePayload(
 ): LiveActivityDto {
   const deviceStatus = deviceSyncService.getStatus();
   const state = syncService.getState();
+  const latestDeviceSync = db.getLatestDeviceSync();
+  const pendingExport = db.listPendingExportVideos(400);
   const deviceReadyForExport = deviceStatus.connected && Boolean(deviceStatus.mountPath) && deviceStatus.writable;
   const safeToDisconnect =
     deviceStatus.connected && !state.player.running && state.player.remaining === 0 && state.player.lastFailedCount === 0;
@@ -67,7 +69,9 @@ function createLivePayload(
     events: db.listRecentEvents(120).reverse(),
     deviceStatus: override?.deviceStatus ?? deviceStatus,
     deviceReadyForExport: override?.deviceReadyForExport ?? deviceReadyForExport,
-    safeToDisconnect: override?.safeToDisconnect ?? safeToDisconnect
+    safeToDisconnect: override?.safeToDisconnect ?? safeToDisconnect,
+    latestDeviceSync,
+    pendingExport
   };
 }
 

@@ -7,6 +7,7 @@ import type { ChannelRecord, SyncCounters } from "../types.js";
 import { downloadVideo, discoverChannel, isCookieAuthError } from "./ytDlp.js";
 import { ExistingDownloadIndex } from "./fileIndex.js";
 import { config } from "../config.js";
+import type { PendingExportItem } from "../deviceSync.js";
 
 export interface SyncState {
   library: LibrarySyncState;
@@ -33,6 +34,7 @@ export interface PlayerSyncState {
   failed: number;
   remaining: number;
   currentItemTitle: string | null;
+  nextPendingItem: PendingExportItem | null;
   lastCompletedAt: string | null;
   lastSummary: string | null;
   lastFailedCount: number;
@@ -84,6 +86,7 @@ export class SyncService {
       failed: 0,
       remaining: 0,
       currentItemTitle: null,
+      nextPendingItem: null,
       lastCompletedAt: null,
       lastSummary: null,
       lastFailedCount: 0
@@ -416,6 +419,7 @@ export class SyncService {
       failed: 0,
       remaining: 0,
       currentItemTitle: null,
+      nextPendingItem: null,
       lastSummary: null
     });
 
@@ -444,7 +448,8 @@ export class SyncService {
       this.setPlayerState({
         lastCompletedAt: new Date().toISOString(),
         lastSummary: summary,
-        currentItemTitle: null
+        currentItemTitle: null,
+        nextPendingItem: null
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -468,7 +473,8 @@ export class SyncService {
         lastCompletedAt: new Date().toISOString(),
         lastSummary: message,
         lastFailedCount: Math.max(this.state.player.lastFailedCount, 1),
-        currentItemTitle: null
+        currentItemTitle: null,
+        nextPendingItem: null
       });
     } finally {
       this.setPlayerState({
@@ -477,7 +483,8 @@ export class SyncService {
         runId: null,
         targetVolume: device.volumeName,
         note: null,
-        currentItemTitle: null
+        currentItemTitle: null,
+        nextPendingItem: null
       });
     }
   }
@@ -538,6 +545,7 @@ export class SyncService {
       failed: 0,
       remaining: pendingAfterReconcile.length,
       currentItemTitle: null,
+      nextPendingItem: pendingAfterReconcile[0] ?? null,
       lastFailedCount: 0
     });
     if (pendingAfterReconcile.length === 0) {
@@ -564,6 +572,7 @@ export class SyncService {
         failed: progress.failed,
         remaining: progress.remaining,
         currentItemTitle: progress.event === "copying" ? progress.currentItem?.title ?? null : null,
+        nextPendingItem: progress.nextItem,
         lastFailedCount: progress.failed
       });
       if (progress.event !== "copying" && progress.currentItem) {
@@ -610,6 +619,7 @@ export class SyncService {
       failed: copyOutcome.failed.length,
       remaining: copyOutcome.failed.length + copyOutcome.missingSource.length,
       currentItemTitle: null,
+      nextPendingItem: null,
       lastFailedCount: copyOutcome.failed.length
     });
     return summary;

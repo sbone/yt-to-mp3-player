@@ -45,6 +45,7 @@ export interface DeviceSyncProgressSnapshot {
   failed: number;
   remaining: number;
   currentItem: PendingExportItem | null;
+  nextItem: PendingExportItem | null;
   event: "copying" | "copied" | "already-present" | "missing-source" | "failed";
 }
 
@@ -147,7 +148,11 @@ export class DeviceSyncService {
       return outcome;
     }
 
-    const emitProgress = (event: DeviceSyncProgressSnapshot["event"], currentItem: PendingExportItem | null): void => {
+    const emitProgress = (
+      event: DeviceSyncProgressSnapshot["event"],
+      currentItem: PendingExportItem | null,
+      nextItem: PendingExportItem | null
+    ): void => {
       onProgress?.({
         total: items.length,
         processed:
@@ -157,14 +162,16 @@ export class DeviceSyncService {
         remaining:
           items.length - (outcome.copied.length + outcome.alreadyPresent.length + outcome.missingSource.length + outcome.failed.length),
         currentItem,
+        nextItem,
         event
       });
     };
 
-    for (const item of items) {
+    for (const [index, item] of items.entries()) {
+      const nextItem = items[index + 1] ?? null;
       if (!existsSync(item.local_path)) {
         outcome.missingSource.push(item);
-        emitProgress("missing-source", item);
+        emitProgress("missing-source", item, nextItem);
         continue;
       }
 
@@ -175,13 +182,13 @@ export class DeviceSyncService {
 
       try {
         mkdirSync(targetDir, { recursive: true });
-        emitProgress("copying", item);
+        emitProgress("copying", item, nextItem);
         if (existsSync(targetPath)) {
           const sourceSize = statSync(item.local_path).size;
           const targetSize = statSync(targetPath).size;
           if (sourceSize === targetSize) {
             outcome.alreadyPresent.push(item);
-            emitProgress("already-present", item);
+            emitProgress("already-present", item, nextItem);
             continue;
           }
         }
@@ -194,14 +201,14 @@ export class DeviceSyncService {
         }
         renameSync(tempTargetPath, targetPath);
         outcome.copied.push(item);
-        emitProgress("copied", item);
+        emitProgress("copied", item, nextItem);
       } catch (error) {
         rmSync(tempTargetPath, { force: true });
         outcome.failed.push({
           item,
           message: error instanceof Error ? error.message : String(error)
         });
-        emitProgress("failed", item);
+        emitProgress("failed", item, nextItem);
       }
     }
 
