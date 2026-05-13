@@ -37,6 +37,7 @@ Quick checks:
 - Sync is manual from the UI (`Sync All Channels` or per-channel sync).
 - `Sync All Channels` is the prefetch path. It downloads/transcodes new items even if the player is not connected.
 - `Sync + Export To Player` is device-first. It only starts when the player is connected and writable, then syncs, reconciles tracks already on the player, and copies any remaining pending tracks.
+- If files were deleted from the player manually, the next player sync re-queues those missing tracks and copies them again.
 - Cookie/auth failures are tracked as `cookie_blocked` and listed on the dashboard.
 - Use `Retry Cookie-Blocked` in the dashboard after fixing cookies/auth.
 - Manual device workflow:

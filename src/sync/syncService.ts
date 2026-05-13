@@ -495,6 +495,21 @@ export class SyncService {
       return message;
     }
 
+    const exportedBefore = this.db.listExportedVideos(5000);
+    const exportedReconciliation = reconcilePendingAgainstDevice(exportedBefore, device.mountPath);
+    const missingExportedIds = exportedReconciliation.unmatched.map((item) => item.item.id);
+
+    if (missingExportedIds.length > 0) {
+      this.db.clearVideosExported(missingExportedIds);
+      this.db.addEvent(
+        runId,
+        "warn",
+        "device-export-requeue-missing",
+        `re-queued ${missingExportedIds.length} exported track${missingExportedIds.length === 1 ? "" : "s"} missing from device`
+      );
+      this.logger.warn(`run=${runId} re-queued exported tracks missing from device count=${missingExportedIds.length}`);
+    }
+
     const pendingBefore = this.db.listPendingExportVideos(5000);
     const reconciliation = reconcilePendingAgainstDevice(pendingBefore, device.mountPath);
     const reconciledIds = [

@@ -515,6 +515,38 @@ export class AppDb {
     }>;
   }
 
+  listExportedVideos(limit = 500): Array<{
+    id: number;
+    title: string;
+    local_path: string;
+    downloaded_at: string | null;
+    channel_handle: string | null;
+  }> {
+    return this.db
+      .prepare(
+        `select
+          v.id,
+          v.title,
+          v.local_path,
+          v.downloaded_at,
+          c.handle as channel_handle
+         from videos v
+         left join channels c on c.id = v.channel_id
+         where v.status = 'downloaded'
+           and v.local_path is not null
+           and v.exported_at is not null
+         order by coalesce(v.exported_at, v.downloaded_at, v.last_seen_at) desc, v.id desc
+         limit ?`
+      )
+      .all(limit) as Array<{
+      id: number;
+      title: string;
+      local_path: string;
+      downloaded_at: string | null;
+      channel_handle: string | null;
+    }>;
+  }
+
   markVideosAsExported(videoIds: number[], note: string | null): { syncId: number | null; itemCount: number } {
     if (videoIds.length === 0) {
       return { syncId: null, itemCount: 0 };
@@ -539,6 +571,28 @@ export class AppDb {
         updateVideo.run(now, syncId, videoId);
       }
       return { syncId, itemCount: videoIds.length };
+    });
+
+    return tx();
+  }
+
+  clearVideosExported(videoIds: number[]): number {
+    if (videoIds.length === 0) {
+      return 0;
+    }
+
+    const updateVideo = this.db.prepare(
+      `update videos
+       set exported_at = null,
+           exported_device_sync_id = null
+       where id = ?`
+    );
+
+    const tx = this.db.transaction(() => {
+      for (const videoId of videoIds) {
+        updateVideo.run(videoId);
+      }
+      return videoIds.length;
     });
 
     return tx();
