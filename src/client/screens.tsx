@@ -576,6 +576,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
   const playerDisabledReason = !deviceReadyForExport ? deviceStatus?.reason ?? "Player not available." : null;
   const safeToDisconnect = livePayload?.safeToDisconnect ?? payload?.safeToDisconnect ?? false;
   const pendingExportCount = payload?.pendingExport?.length ?? 0;
+  const nextPendingTrack = payload?.pendingExport[0] ?? null;
   const cookieBlockedCount = payload?.cookieBlocked?.length ?? 0;
   const notification = livePayload ? activeNotification(livePayload.state.notifications, model.pendingNotificationIds) : null;
 
@@ -680,6 +681,15 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
               <strong>remaining={syncState?.player.remaining ?? 0}</strong>
               {syncState?.player.currentItemTitle ? `, current=${syncState.player.currentItemTitle}` : ""}
             </p>
+            {nextPendingTrack ? (
+              <p className="small">
+                Next up: <strong>{nextPendingTrack.title}</strong>
+                {nextPendingTrack.channel_handle ? ` from ${channelLabel(nextPendingTrack.channel_handle)}` : ""}
+                {nextPendingTrack.downloaded_at ? `, downloaded ${fmtDate(nextPendingTrack.downloaded_at)}` : ""}
+              </p>
+            ) : (
+              <p className="small">No queued tracks are waiting for player export.</p>
+            )}
           </section>
 
           <section className="card" {...{ "box-": "round" }}>
@@ -707,37 +717,6 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
           {renderRemoteError(model.live.error)}
           {renderTerminal(livePayload)}
         </section>
-      </section>
-
-      <section className="card" {...{ "box-": "round" }}>
-        <h2>Pending Export Queue</h2>
-        <p className="small">Newest local-only tracks are listed first so the player gets fresh audio before older backlog.</p>
-        <table>
-          <thead>
-            <tr>
-              <th>Channel</th>
-              <th>Title</th>
-              <th>Downloaded</th>
-              <th>Path</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payload && payload.pendingExport.length > 0 ? (
-              payload.pendingExport.map((video) => (
-                <tr key={video.id}>
-                  <td>{channelLabel(video.channel_handle)}</td>
-                  <td>{video.title}</td>
-                  <td>{fmtDate(video.downloaded_at)}</td>
-                  <td className="mono small">{video.local_path}</td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={4}>No pending tracks.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
       </section>
 
       <section className="card" {...{ "box-": "round" }}>
