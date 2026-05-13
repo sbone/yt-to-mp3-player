@@ -9,7 +9,6 @@ import {
   getLiveActivity,
   getRunDetail,
   getRuns,
-  markPendingAsExported,
   openLiveEvents,
   retryCookieErrors,
   startChannelSync,
@@ -295,7 +294,7 @@ function AppProgram(): ReactElement {
             );
           break;
         case "StartPlayerSync":
-          void startPlayerSync(cmd.note)
+          void startPlayerSync()
             .then((result: ActionResponse) => dispatch({ type: "DashboardMsg", msg: { type: "SyncPlayerFinished", result } }))
             .catch((error) =>
               dispatch({
@@ -303,19 +302,6 @@ function AppProgram(): ReactElement {
                 msg: {
                   type: "SyncPlayerFinished",
                   result: { started: false, reason: commandFailureMessage(error), message: "Player sync failed." }
-                }
-              })
-            );
-          break;
-        case "MarkPendingAsExported":
-          void markPendingAsExported(cmd.note)
-            .then((result: ActionResponse) => dispatch({ type: "DashboardMsg", msg: { type: "MarkPendingFinished", result } }))
-            .catch((error) =>
-              dispatch({
-                type: "DashboardMsg",
-                msg: {
-                  type: "MarkPendingFinished",
-                  result: { started: false, reason: commandFailureMessage(error), message: "Mark pending failed." }
                 }
               })
             );

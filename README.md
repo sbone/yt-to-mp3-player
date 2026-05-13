@@ -42,12 +42,10 @@ Quick checks:
 - Manual device workflow:
   - Dashboard shows a `Pending Export Queue` (downloaded but not yet exported tracks).
   - If your player is mounted on macOS, `Copy Pending To Player` copies queued MP3s onto the device automatically.
-  - The app preserves the source folder name on-device (for example `downloads/Wiztale/...` goes to `/Volumes/<device>/Wiztale/...`).
+- The app preserves the source folder name on-device (for example `downloads/Wiztale/...` goes to `/Volumes/<device>/Wiztale/...`).
 - Existing files already present on the device are treated as exported so they leave the queue.
 - `./scripts/reconcile-device.sh` scans the mounted player and reports which pending tracks are already present.
 - `./scripts/reconcile-device.sh --apply` marks only high-confidence matches as exported without copying or deleting device files.
-- `Download Pending Manifest` is still available for drag/drop sessions.
-- `Mark Pending As Exported` still exists as a manual override.
 - State is stored in `data/app.db`.
 - Logs are written to `data/logs/app.log`.
 - Downloads go to `downloads/`.

@@ -115,17 +115,9 @@ export function retryCookieErrors(): Promise<ActionResponse> {
   });
 }
 
-export function startPlayerSync(note: string): Promise<ActionResponse> {
+export function startPlayerSync(): Promise<ActionResponse> {
   return requestJson("/api/device-sync/sync-player", {
-    method: "POST",
-    body: JSON.stringify({ note })
-  });
-}
-
-export function markPendingAsExported(note: string): Promise<ActionResponse> {
-  return requestJson("/api/device-sync/mark-pending", {
-    method: "POST",
-    body: JSON.stringify({ note })
+    method: "POST"
   });
 }
 

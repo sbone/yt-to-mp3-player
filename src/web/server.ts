@@ -275,9 +275,8 @@ export function createServer(
     res.json(payload);
   });
 
-  app.post("/api/device-sync/sync-player", (req, res) => {
-    const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
-    const started = syncService.startPlayerSync(note.length > 0 ? note : null);
+  app.post("/api/device-sync/sync-player", (_req, res) => {
+    const started = syncService.startPlayerSync(null);
     logger.info(started ? "manual player-sync triggered" : "player-sync request ignored");
     res.json(
       actionResponse(
@@ -311,34 +310,6 @@ export function createServer(
         started ? null : "library run already active"
       )
     );
-  });
-
-  app.post("/api/device-sync/mark-pending", (req, res) => {
-    const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
-    const result = db.markPendingAsExported(note.length > 0 ? note : null);
-    logger.info(`device-sync mark-pending sync_id=${result.syncId ?? "none"} item_count=${result.itemCount}`);
-    res.json({
-      started: result.itemCount > 0,
-      reason: result.itemCount > 0 ? null : "no pending tracks",
-      message:
-        result.itemCount > 0
-          ? `Marked ${result.itemCount} pending track${result.itemCount === 1 ? "" : "s"} as exported.`
-          : "No pending tracks to mark as exported."
-    } satisfies ActionResponse);
-  });
-
-  app.get("/device-sync/pending-manifest.txt", (_req, res) => {
-    const pending = db.listPendingExportVideos(5000);
-    const lines = [`# pending export manifest`, `# generated_at: ${new Date().toISOString()}`, `# count: ${pending.length}`, ""];
-
-    for (const item of pending) {
-      lines.push(item.local_path);
-    }
-
-    const body = `${lines.join("\n")}\n`;
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="pending-export-manifest.txt"`);
-    res.send(body);
   });
 
   const serveShell = (_req: express.Request, res: express.Response): void => {

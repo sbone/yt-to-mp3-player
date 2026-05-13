@@ -27,8 +27,7 @@ export type Cmd =
   | { type: "StartSync" }
   | { type: "StartSyncAndExport" }
   | { type: "RetryCookieErrors" }
-  | { type: "StartPlayerSync"; note: string }
-  | { type: "MarkPendingAsExported"; note: string }
+  | { type: "StartPlayerSync" }
   | { type: "StartChannelSync"; handle: string }
   | { type: "Navigate"; path: string };
 
@@ -54,13 +53,10 @@ export interface DashboardModel {
   notificationStateInitialized: boolean;
   seenNotificationIds: string[];
   pendingNotificationIds: string[];
-  syncPlayerNote: string;
-  markPendingNote: string;
   syncAction: ActionState;
   syncAndExportAction: ActionState;
   retryAction: ActionState;
   syncPlayerAction: ActionState;
-  markPendingAction: ActionState;
 }
 
 export type DashboardMsg =
@@ -76,12 +72,8 @@ export type DashboardMsg =
   | { type: "SyncAndExportFinished"; result: SyncAndExportActionResponse }
   | { type: "RetryRequested" }
   | { type: "RetryFinished"; result: ActionResponse }
-  | { type: "SyncPlayerNoteChanged"; note: string }
   | { type: "SyncPlayerRequested" }
   | { type: "SyncPlayerFinished"; result: ActionResponse }
-  | { type: "MarkPendingNoteChanged"; note: string }
-  | { type: "MarkPendingRequested" }
-  | { type: "MarkPendingFinished"; result: ActionResponse }
   | { type: "NotificationDismissed"; id: string };
 
 export interface ChannelsModel {
@@ -190,13 +182,10 @@ export function initDashboardModel(): DashboardModel {
     notificationStateInitialized: false,
     seenNotificationIds: [],
     pendingNotificationIds: [],
-    syncPlayerNote: "",
-    markPendingNote: "",
     syncAction: idleAction(),
     syncAndExportAction: idleAction(),
     retryAction: idleAction(),
-    syncPlayerAction: idleAction(),
-    markPendingAction: idleAction()
+    syncPlayerAction: idleAction()
   };
 }
 
@@ -309,23 +298,12 @@ export function updateDashboardModel(model: DashboardModel, msg: DashboardMsg): 
         { ...model, retryAction: msg.result.started ? workingAction(true) : actionStateFromResult(msg.result) },
         msg.result.started ? [{ type: "FetchDashboard" }, { type: "FetchLiveActivity" }] : []
       ];
-    case "SyncPlayerNoteChanged":
-      return [{ ...model, syncPlayerNote: msg.note }, []];
     case "SyncPlayerRequested":
-      return [{ ...model, syncPlayerAction: workingAction(true) }, [{ type: "StartPlayerSync", note: model.syncPlayerNote }]];
+      return [{ ...model, syncPlayerAction: workingAction(true) }, [{ type: "StartPlayerSync" }]];
     case "SyncPlayerFinished":
       return [
         { ...model, syncPlayerAction: msg.result.started ? workingAction(true) : actionStateFromResult(msg.result) },
         msg.result.started ? [{ type: "FetchDashboard" }, { type: "FetchLiveActivity" }] : []
-      ];
-    case "MarkPendingNoteChanged":
-      return [{ ...model, markPendingNote: msg.note }, []];
-    case "MarkPendingRequested":
-      return [{ ...model, markPendingAction: workingAction(false) }, [{ type: "MarkPendingAsExported", note: model.markPendingNote }]];
-    case "MarkPendingFinished":
-      return [
-        { ...model, markPendingAction: actionStateFromResult(msg.result) },
-        [{ type: "FetchDashboard" }]
       ];
     case "NotificationDismissed":
       return [
@@ -702,60 +680,6 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
               <strong>remaining={syncState?.player.remaining ?? 0}</strong>
               {syncState?.player.currentItemTitle ? `, current=${syncState.player.currentItemTitle}` : ""}
             </p>
-            <div className="actions">
-              <div className="inline-form">
-                <input
-                  {...{ "is-": "input" }}
-                  name="sync-player-note"
-                  type="text"
-                  placeholder="Optional note (e.g. auto-copied to AGP-A02T)"
-                  value={model.syncPlayerNote}
-                  onChange={(event) => dispatch({ type: "SyncPlayerNoteChanged", note: event.target.value })}
-                />
-                {wrapWithTooltip(
-                  <button
-                    type="button"
-                    {...{ "box-": "round", "variant-": "success" }}
-                    disabled={!deviceReadyForExport || playerActive || model.syncPlayerAction.status === "working"}
-                    onClick={() => dispatch({ type: "SyncPlayerRequested" })}
-                  >
-                    {renderButtonLabel(
-                      "Sync Player Now",
-                      isPlayerOnlyRun ? "Player Sync Active..." : "Syncing Player...",
-                      isPlayerOnlyRun || model.syncPlayerAction.status === "working"
-                    )}
-                  </button>,
-                  playerDisabledReason
-                )}
-              </div>
-              <div className="inline-form">
-                <input
-                  {...{ "is-": "input" }}
-                  name="mark-pending-note"
-                  type="text"
-                  placeholder="Optional note (e.g. copied to SanDisk)"
-                  value={model.markPendingNote}
-                  onChange={(event) => dispatch({ type: "MarkPendingNoteChanged", note: event.target.value })}
-                />
-                <button
-                  type="button"
-                  {...{ "box-": "round", "variant-": "foreground1" }}
-                  disabled={model.markPendingAction.status === "working"}
-                  onClick={() => dispatch({ type: "MarkPendingRequested" })}
-                >
-                  {renderButtonLabel(
-                    "Mark Pending As Exported",
-                    "Marking Pending...",
-                    model.markPendingAction.status === "working"
-                  )}
-                </button>
-              </div>
-              <a className="button-link" href="/device-sync/pending-manifest.txt" {...{ "is-": "button", "box-": "round" }}>
-                Download Pending Manifest
-              </a>
-            </div>
-            {renderActionState(model.syncPlayerAction)}
-            {renderActionState(model.markPendingAction)}
           </section>
 
           <section className="card" {...{ "box-": "round" }}>

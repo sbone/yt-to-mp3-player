@@ -544,20 +544,4 @@ export class AppDb {
     return tx();
   }
 
-  markPendingAsExported(note: string | null): { syncId: number | null; itemCount: number } {
-    const pendingIds = this.db
-      .prepare(
-        `select id
-         from videos
-         where status = 'downloaded'
-           and local_path is not null
-           and exported_at is null`
-      )
-      .all() as Array<{ id: number }>;
-
-    return this.markVideosAsExported(
-      pendingIds.map((video) => video.id),
-      note
-    );
-  }
 }
