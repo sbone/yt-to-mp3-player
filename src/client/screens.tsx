@@ -571,7 +571,11 @@ function renderRemoteError(error: string | null): ReactElement | null {
 
 function renderTerminal(live: LiveActivityDto | null): ReactElement {
   if (!live) {
-    return <pre className="terminal" {...{ "is-": "pre", "box-": "double" }}>Loading...</pre>;
+    return (
+      <div className="terminal-shell" {...{ "box-": "double" }}>
+        <pre className="terminal">Loading...</pre>
+      </div>
+    );
   }
 
   const lines = [
@@ -586,7 +590,11 @@ function renderTerminal(live: LiveActivityDto | null): ReactElement {
     lines.push(`[${new Date(event.created_at).toLocaleTimeString()}] [${event.level.toUpperCase()}] [run ${event.run_id}] ${event.event_type}${channel} :: ${event.message}`);
   }
 
-  return <pre className="terminal" {...{ "is-": "pre", "box-": "double" }}>{lines.join("\n")}</pre>;
+  return (
+    <div className="terminal-shell" {...{ "box-": "double" }}>
+      <pre className="terminal">{lines.join("\n")}</pre>
+    </div>
+  );
 }
 
 function activeNotification(notifications: SyncNotification[], pendingNotificationIds: string[]): SyncNotification | null {

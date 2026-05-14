@@ -118,6 +118,7 @@
 
   .dashboard-live-card {
     height: 100%;
+    min-width: 0;
     display: grid;
     gap: 0.75rem;
     align-content: start;
@@ -452,14 +453,27 @@
     font-size: 0.875rem;
   }
 
+  .terminal-shell {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    background: rgb(4 10 7 / 0.8);
+  }
+
   .terminal {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     margin: 0;
     min-height: 240px;
     max-height: 420px;
     overflow: auto;
-    background: rgb(4 10 7 / 0.8);
+    padding: 0;
+    border: 0;
+    background: transparent;
     color: #9ef7b2;
-    --pre-background: rgb(4 10 7 / 0.8);
+    --pre-background: transparent;
   }
 
   .sync-notification-backdrop {
