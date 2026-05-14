@@ -349,22 +349,31 @@ function AppProgram(): ReactElement {
   }, [program.model.route]);
 
   const route = program.model.route;
+  const topNavSection =
+    route.kind === "dashboard"
+      ? "dashboard"
+      : route.kind === "channels" || route.kind === "channel-detail"
+        ? "channels"
+        : route.kind === "runs" || route.kind === "run-detail"
+          ? "runs"
+          : null;
 
   return (
     <>
-      <header className="topbar" {...{ "box-": "double", "shear-": "bottom" }}>
+      <header className="topbar">
         <div className="topbar-inner">
-          <Link className="brand" to="/" {...{ "is-": "button", "size-": "small" }}>
-            yt-to-audio
+          <Link className="brand" to="/">
+            <span className="brand-mark">yt-to-audio</span>
+            <span className="brand-subtitle">Channel sync dashboard</span>
           </Link>
           <nav className="nav">
-            <Link to="/" {...{ "is-": "button", "size-": "small", "box-": "round" }}>
+            <Link className={topNavSection === "dashboard" ? "nav-link nav-link-active" : "nav-link"} to="/">
               Dashboard
             </Link>
-            <Link to="/channels" {...{ "is-": "button", "size-": "small", "box-": "round" }}>
+            <Link className={topNavSection === "channels" ? "nav-link nav-link-active" : "nav-link"} to="/channels">
               Channels
             </Link>
-            <Link to="/runs" {...{ "is-": "button", "size-": "small", "box-": "round" }}>
+            <Link className={topNavSection === "runs" ? "nav-link nav-link-active" : "nav-link"} to="/runs">
               Runs
             </Link>
           </nav>
