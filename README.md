@@ -2,6 +2,10 @@
 
 Local TypeScript app with an Express API and React SPA. It tracks YouTube channels and playlists with `yt-dlp`, downloads new videos as MP3s, and syncs them to a basic USB MP3 player.
 
+## Screenshot
+
+<img width="2880" height="1750" alt="updated ui" src="https://github.com/user-attachments/assets/b31d91ec-adf8-42a3-bde3-1d41794d73db" />
+
 ## Requirements
 
 - Node.js 22.x
