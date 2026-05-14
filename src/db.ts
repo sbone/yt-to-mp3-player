@@ -191,6 +191,44 @@ export class AppDb {
       });
   }
 
+  reconcileInterruptedRuns(note: string): number {
+    const now = new Date().toISOString();
+    const runningRuns = this.db
+      .prepare(
+        `select id, channel_id
+         from sync_runs
+         where status = 'running'`
+      )
+      .all() as Array<{ id: number; channel_id: number | null }>;
+
+    if (runningRuns.length === 0) {
+      return 0;
+    }
+
+    const updateRun = this.db.prepare(
+      `update sync_runs
+       set finished_at = ?,
+           status = 'failed',
+           notes = ?
+       where id = ?`
+    );
+    const insertEvent = this.db.prepare(
+      `insert into sync_events
+       (run_id, channel_id, video_id, level, event_type, message, created_at)
+       values (?, ?, null, 'error', 'run-interrupted', ?, ?)`
+    );
+
+    const tx = this.db.transaction(() => {
+      for (const run of runningRuns) {
+        updateRun.run(now, note, run.id);
+        insertEvent.run(run.id, run.channel_id, note, now);
+      }
+      return runningRuns.length;
+    });
+
+    return tx();
+  }
+
   addEvent(
     runId: number,
     level: "info" | "warn" | "error",
