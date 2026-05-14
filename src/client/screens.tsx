@@ -463,7 +463,7 @@ function progressPercent(completed: number, total: number): number {
   return clampPercent((completed / total) * 100);
 }
 
-function renderProgressBar(label: string, percent: number, details: string): ReactElement {
+function renderProgressBar(label: ReactElement | string, percent: number, details: string): ReactElement {
   return (
     <div className="progress-block">
       <div className="progress-label-row">
@@ -780,7 +780,9 @@ export function renderDashboardScreen(
               : null}
             {syncState?.player.running && syncState.player.currentItemTitle && (syncState.player.currentItemBytesTotal ?? 0) > 0
               ? renderProgressBar(
-                  `Copying ${syncState.player.currentItemTitle}`,
+                  <>
+                    Copying {sensitiveText(syncState.player.currentItemTitle, obfuscateSensitive)}
+                  </>,
                   currentFilePercent,
                   `${fmtBytes(currentItemBytesCopied)} / ${fmtBytes(currentItemBytesTotal)}`
                 )
