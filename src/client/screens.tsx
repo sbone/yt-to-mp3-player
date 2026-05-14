@@ -656,7 +656,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
           >
             {renderButtonLabel(
               "Refresh Library",
-              isLibraryRefreshRun ? "Library Refresh Active..." : "Refreshing Library...",
+              "Refreshing Library...",
               isLibraryRefreshRun || model.syncAction.status === "working"
             )}
           </button>
@@ -669,7 +669,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
             >
               {renderButtonLabel(
                 "Sync Player",
-                isPlayerOnlyRun ? "Player Sync Active..." : "Syncing Player...",
+                "Syncing Player...",
                 isPlayerOnlyRun || model.syncPlayerAction.status === "working"
               )}
             </button>,
