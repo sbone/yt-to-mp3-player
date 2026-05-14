@@ -283,6 +283,43 @@
     letter-spacing: 0.04em;
   }
 
+  .collapsible-card {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .collapsible-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.95rem 1rem;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    background: rgb(12 24 18 / 0.74);
+  }
+
+  .collapsible-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .collapsible-summary::before {
+    content: "+";
+    margin-right: 0.8rem;
+    color: var(--foreground1);
+  }
+
+  details[open] > .collapsible-summary::before {
+    content: "-";
+  }
+
+  .collapsible-content {
+    display: grid;
+    gap: 0.8rem;
+    padding: 0 1rem 1rem;
+  }
+
   button,
   .button-link,
   .nav a,

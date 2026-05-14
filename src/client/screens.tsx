@@ -682,18 +682,6 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
             </button>,
             playerDisabledReason
           )}
-          <button
-            type="button"
-            {...{ "box-": "round", "variant-": "warning" }}
-            disabled={libraryActive || model.retryAction.status === "working"}
-            onClick={() => dispatch({ type: "RetryRequested" })}
-          >
-            {renderButtonLabel(
-              `Retry Cookie-Blocked (${cookieBlockedCount})`,
-              isCookieRetryRun ? "Cookie Retry Active..." : "Retrying Cookie-Blocked...",
-              isCookieRetryRun || model.retryAction.status === "working"
-            )}
-          </button>
         </div>
         {renderActionState(model.syncAction)}
         {renderActionState(model.syncAndExportAction)}
@@ -838,40 +826,6 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
       </section>
 
       <section className="card" {...{ "box-": "round" }}>
-        <h2>Cookie-Blocked Videos</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Channel</th>
-              <th>Title</th>
-              <th>Video</th>
-              <th>Error</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payload && payload.cookieBlocked.length > 0 ? (
-              payload.cookieBlocked.map((video) => (
-                <tr key={video.id}>
-                  <td>
-                    <Link to={`/channels/${encodeURIComponent(video.channel_handle)}`}>{channelLabel(video.channel_handle)}</Link>
-                  </td>
-                  <td>{video.title}</td>
-                  <td>
-                    <a href={`https://www.youtube.com/watch?v=${video.youtube_video_id}`}>{video.youtube_video_id}</a>
-                  </td>
-                  <td className="small">{video.failure_message ?? ""}</td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={4}>No cookie/auth blocked videos.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="card" {...{ "box-": "round" }}>
         <h2>Recent Runs</h2>
         <table>
           <thead>
@@ -906,6 +860,62 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
           </tbody>
         </table>
       </section>
+
+      <details className="card collapsible-card" {...{ "box-": "round" }}>
+        <summary className="collapsible-summary">
+          <span>Cookie/Auth Recovery</span>
+          <span className="small mono">{cookieBlockedCount} blocked</span>
+        </summary>
+        <div className="collapsible-content">
+          <p className="small">
+            Hidden by default because this is maintenance workflow, not part of the normal sync/export path.
+          </p>
+          <div className="actions">
+            <button
+              type="button"
+              {...{ "box-": "round", "variant-": "warning" }}
+              disabled={libraryActive || model.retryAction.status === "working"}
+              onClick={() => dispatch({ type: "RetryRequested" })}
+            >
+              {renderButtonLabel(
+                `Retry Cookie-Blocked (${cookieBlockedCount})`,
+                isCookieRetryRun ? "Cookie Retry Active..." : "Retrying Cookie-Blocked...",
+                isCookieRetryRun || model.retryAction.status === "working"
+              )}
+            </button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Channel</th>
+                <th>Title</th>
+                <th>Video</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payload && payload.cookieBlocked.length > 0 ? (
+                payload.cookieBlocked.map((video) => (
+                  <tr key={video.id}>
+                    <td>
+                      <Link to={`/channels/${encodeURIComponent(video.channel_handle)}`}>{channelLabel(video.channel_handle)}</Link>
+                    </td>
+                    <td>{video.title}</td>
+                    <td>
+                      <a href={`https://www.youtube.com/watch?v=${video.youtube_video_id}`}>{video.youtube_video_id}</a>
+                    </td>
+                    <td className="small">{video.failure_message ?? ""}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4}>No cookie/auth blocked videos.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </details>
 
       {notification ? (
         <div className="sync-notification-backdrop" onClick={() => dispatch({ type: "NotificationDismissed", id: notification.id })}>
