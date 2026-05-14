@@ -480,14 +480,14 @@ function renderProgressBar(label: ReactElement | string, percent: number, detail
 
 function badgeClass(status: string): string {
   if (status === "downloaded" || status === "success") return "badge badge-ok";
-  if (status === "cookie_blocked" || status === "warn" || status === "partial" || status === "running") return "badge badge-warn";
+  if (status === "cookie_blocked" || status === "warn" || status === "partial" || status === "running" || status === "interrupted") return "badge badge-warn";
   if (status === "failed" || status === "error") return "badge badge-bad";
   return "badge";
 }
 
 function badgeVariant(status: string): string {
   if (status === "downloaded" || status === "success") return "success";
-  if (status === "cookie_blocked" || status === "warn" || status === "partial" || status === "running") return "warning";
+  if (status === "cookie_blocked" || status === "warn" || status === "partial" || status === "running" || status === "interrupted") return "warning";
   if (status === "failed" || status === "error") return "danger";
   return "muted";
 }
@@ -630,6 +630,24 @@ function activeNotification(notifications: SyncNotification[], pendingNotificati
 
 function summarizeRunScope(scope: string, handle: string | null): string {
   return handle ? `${scope} · ${channelLabel(handle)}` : scope;
+}
+
+function isInterruptedRun(notes: string | null | undefined): boolean {
+  return (notes ?? "").toLowerCase().includes("interrupted by server shutdown or restart");
+}
+
+function renderRunStatus(status: string, notes: string | null | undefined): ReactElement {
+  return (
+    <>
+      <span className={badgeClass(status)} {...badgeAttributes(status)}>{status}</span>
+      {isInterruptedRun(notes) ? (
+        <>
+          {" "}
+          <span className={badgeClass("interrupted")} {...badgeAttributes("interrupted")}>interrupted</span>
+        </>
+      ) : null}
+    </>
+  );
 }
 
 export function renderDashboardScreen(
@@ -886,7 +904,7 @@ export function renderDashboardScreen(
                   {run.scope} {run.channel_handle ? <>({sensitiveText(run.channel_handle, obfuscateSensitive)})</> : ""}
                 </td>
                 <td>
-                  <span className={badgeClass(run.status)} {...badgeAttributes(run.status)}>{run.status}</span>
+                  {renderRunStatus(run.status, run.notes)}
                 </td>
                 <td>{run.discovered_count}</td>
                 <td>{run.downloaded_count}</td>
@@ -1201,7 +1219,7 @@ export function renderRunsScreen(model: RunsModel, options: ScreenRenderOptions)
                 <td>{fmtDate(run.finished_at)}</td>
                 <td>{sensitiveText(summarizeRunScope(run.scope, run.channel_handle), obfuscateSensitive)}</td>
                 <td>
-                  <span className={badgeClass(run.status)} {...badgeAttributes(run.status)}>{run.status}</span>
+                  {renderRunStatus(run.status, run.notes)}
                 </td>
                 <td>
                   {run.downloaded_count}/{run.skipped_count}/{run.failed_count}
@@ -1237,11 +1255,12 @@ export function renderRunDetailScreen(model: RunDetailModel, options: ScreenRend
           <div className="detail-shell">
             <div className="detail-lead">
               <p>
-                <span className={badgeClass(payload.run.status)} {...badgeAttributes(payload.run.status)}>{payload.run.status}</span> started{" "}
+                {renderRunStatus(payload.run.status, payload.run.notes)} started{" "}
                 {fmtDate(payload.run.started_at)}
               </p>
               <div className="detail-meta">
                 <p className="small mono">finished {fmtDate(payload.run.finished_at)}</p>
+                {payload.run.notes ? <p className="small mono">{payload.run.notes}</p> : null}
                 <p className="small mono">scope {sensitiveText(summarizeRunScope(payload.run.scope, payload.run.channel_handle), obfuscateSensitive)}</p>
                 <p className="small mono">discovered {payload.run.discovered_count}</p>
                 <p className="small mono">skipped {payload.run.skipped_count}</p>
