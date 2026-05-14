@@ -177,6 +177,7 @@ function AppProgram(): ReactElement {
     model: initialStateRef.current.model,
     seq: 0
   });
+  const [obfuscateSensitive, setObfuscateSensitive] = useState(false);
 
   function dispatch(msg: AppMsg): void {
     setProgram((previous) => {
@@ -367,6 +368,13 @@ function AppProgram(): ReactElement {
             <span className="brand-subtitle">Channel sync dashboard</span>
           </Link>
           <nav className="nav">
+            <button
+              type="button"
+              className={obfuscateSensitive ? "nav-link screenshot-toggle screenshot-toggle-active" : "nav-link screenshot-toggle"}
+              onClick={() => setObfuscateSensitive((value) => !value)}
+            >
+              {obfuscateSensitive ? "Screenshot On" : "Screenshot"}
+            </button>
             <Link className={topNavSection === "dashboard" ? "nav-link nav-link-active" : "nav-link"} to="/">
               Dashboard
             </Link>
@@ -380,13 +388,19 @@ function AppProgram(): ReactElement {
         </div>
       </header>
       <main className="layout">
-        {route.kind === "dashboard" ? renderDashboardScreen(program.model.dashboard, (msg) => dispatch({ type: "DashboardMsg", msg })) : null}
-        {route.kind === "channels" ? renderChannelsScreen(program.model.channels) : null}
-        {route.kind === "channel-detail"
-          ? renderChannelDetailScreen(program.model.channelDetail, (msg) => dispatch({ type: "ChannelDetailMsg", msg }))
+        {route.kind === "dashboard"
+          ? renderDashboardScreen(program.model.dashboard, (msg) => dispatch({ type: "DashboardMsg", msg }), {
+              obfuscateSensitive
+            })
           : null}
-        {route.kind === "runs" ? renderRunsScreen(program.model.runs) : null}
-        {route.kind === "run-detail" ? renderRunDetailScreen(program.model.runDetail) : null}
+        {route.kind === "channels" ? renderChannelsScreen(program.model.channels, { obfuscateSensitive }) : null}
+        {route.kind === "channel-detail"
+          ? renderChannelDetailScreen(program.model.channelDetail, (msg) => dispatch({ type: "ChannelDetailMsg", msg }), {
+              obfuscateSensitive
+            })
+          : null}
+        {route.kind === "runs" ? renderRunsScreen(program.model.runs, { obfuscateSensitive }) : null}
+        {route.kind === "run-detail" ? renderRunDetailScreen(program.model.runDetail, { obfuscateSensitive }) : null}
         {route.kind === "not-found" ? (
           <section className="card" {...{ "box-": "round" }}>
             <h1>Not Found</h1>

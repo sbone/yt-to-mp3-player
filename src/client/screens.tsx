@@ -35,6 +35,10 @@ export interface ViewContext {
   navigate(path: string): void;
 }
 
+export interface ScreenRenderOptions {
+  obfuscateSensitive: boolean;
+}
+
 export interface RemoteData<T> {
   status: "idle" | "loading" | "success" | "failure";
   data: T | null;
@@ -513,6 +517,22 @@ function channelLabel(handle: string | null | undefined): string {
   return handle.startsWith("playlist:") ? handle : `@${handle}`;
 }
 
+function sensitiveText(value: string | null | undefined, obfuscateSensitive: boolean): ReactElement | null {
+  if (!value) {
+    return null;
+  }
+  return <span className={obfuscateSensitive ? "sensitive-text sensitive-text-redacted" : "sensitive-text"}>{value}</span>;
+}
+
+function redactTerminalFragment(value: string): string {
+  return value
+    .replace(/playlist:[^\s]+/g, "playlist:[redacted]")
+    .replace(/@[A-Za-z0-9._-]+/g, "@[redacted]")
+    .replace(/"[^"]+"/g, '"[redacted]"')
+    .replace(/checking channel\s+.+$/gim, "checking channel [redacted]")
+    .replace(/current=(?!idle)[^\n]+/g, "current=[redacted]");
+}
+
 function deviceStateBadge(status: string, exportedAt: string | null): ReactElement {
   if (status === "downloaded" && exportedAt) {
     return <span className={badgeClass("success")} {...badgeAttributes("success")}>On player</span>;
@@ -569,7 +589,7 @@ function renderRemoteError(error: string | null): ReactElement | null {
   return <p className="small mono">{error}</p>;
 }
 
-function renderTerminal(live: LiveActivityDto | null): ReactElement {
+function renderTerminal(live: LiveActivityDto | null, obfuscateSensitive: boolean): ReactElement {
   if (!live) {
     return (
       <div className="terminal-shell" {...{ "box-": "double" }}>
@@ -583,11 +603,12 @@ function renderTerminal(live: LiveActivityDto | null): ReactElement {
     `[PLAYER ${live.state.player.running ? "RUNNING" : "IDLE"}] run=${live.state.player.runId ?? "n/a"} volume=${live.state.player.targetVolume ?? "n/a"}`,
     `         reconciled=${live.state.player.reconciled} copied=${live.state.player.copied} failed=${live.state.player.failed} remaining=${live.state.player.remaining} current=${live.state.player.currentItemTitle ?? "idle"}`,
     ""
-  ];
+  ].map((line) => (obfuscateSensitive ? redactTerminalFragment(line) : line));
 
   for (const event of live.events) {
-    const channel = event.channel_handle ? ` ${event.channel_handle}` : "";
-    lines.push(`[${new Date(event.created_at).toLocaleTimeString()}] [${event.level.toUpperCase()}] [run ${event.run_id}] ${event.event_type}${channel} :: ${event.message}`);
+    const channel = event.channel_handle ? ` ${obfuscateSensitive ? "[redacted]" : event.channel_handle}` : "";
+    const message = obfuscateSensitive ? redactTerminalFragment(event.message) : event.message;
+    lines.push(`[${new Date(event.created_at).toLocaleTimeString()}] [${event.level.toUpperCase()}] [run ${event.run_id}] ${event.event_type}${channel} :: ${message}`);
   }
 
   return (
@@ -611,7 +632,12 @@ function summarizeRunScope(scope: string, handle: string | null): string {
   return handle ? `${scope} · ${channelLabel(handle)}` : scope;
 }
 
-export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: DashboardMsg) => void): ReactElement {
+export function renderDashboardScreen(
+  model: DashboardModel,
+  dispatch: (msg: DashboardMsg) => void,
+  options: ScreenRenderOptions
+): ReactElement {
+  const { obfuscateSensitive } = options;
   const payload = model.data.data;
   const livePayload = model.live.data;
   const syncState = livePayload?.state ?? payload?.syncState;
@@ -743,7 +769,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
               Player sync: <strong>reconciled={syncState?.player.reconciled ?? 0}</strong>,{" "}
               <strong>copied={syncState?.player.copied ?? 0}</strong>, <strong>failed={syncState?.player.failed ?? 0}</strong>,{" "}
               <strong>remaining={syncState?.player.remaining ?? 0}</strong>
-              {syncState?.player.currentItemTitle ? `, current=${syncState.player.currentItemTitle}` : ""}
+              {syncState?.player.currentItemTitle ? <> , current={sensitiveText(syncState.player.currentItemTitle, obfuscateSensitive)}</> : ""}
             </p>
             {syncState?.player.running && (syncState.player.totalItems ?? 0) > 0
               ? renderProgressBar(
@@ -761,8 +787,8 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
               : null}
             {nextPendingTrack ? (
               <p className="small">
-                Next up: <strong>{nextPendingTrack.title}</strong>
-                {nextPendingTrack.channel_handle ? ` from ${channelLabel(nextPendingTrack.channel_handle)}` : ""}
+                Next up: <strong>{sensitiveText(nextPendingTrack.title, obfuscateSensitive)}</strong>
+                {nextPendingTrack.channel_handle ? <> from {sensitiveText(channelLabel(nextPendingTrack.channel_handle), obfuscateSensitive)}</> : ""}
                 {nextPendingTrack.downloaded_at ? `, downloaded ${fmtDate(nextPendingTrack.downloaded_at)}` : ""}
               </p>
             ) : (
@@ -785,7 +811,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
               player progress: reconciled={syncState?.player.reconciled ?? 0} copied={syncState?.player.copied ?? 0} failed=
               {syncState?.player.failed ?? 0} remaining={syncState?.player.remaining ?? 0}
             </p>
-            <p className="mono">player current: {syncState?.player.currentItemTitle ?? "idle"}</p>
+            <p className="mono">player current: {syncState?.player.currentItemTitle ? sensitiveText(syncState.player.currentItemTitle, obfuscateSensitive) : "idle"}</p>
           </section>
         </div>
 
@@ -793,7 +819,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
           <h2>Live Activity</h2>
           <p className="small">Live updates stream over SSE while this page is open.</p>
           {renderRemoteError(model.live.error)}
-          {renderTerminal(livePayload)}
+          {renderTerminal(livePayload, obfuscateSensitive)}
         </section>
       </section>
 
@@ -817,7 +843,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
             {payload?.channels.map((channel) => (
               <tr key={channel.id}>
                 <td>
-                  <Link to={`/channels/${encodeURIComponent(channel.handle)}`}>{channelLabel(channel.handle)}</Link>
+                  <Link to={`/channels/${encodeURIComponent(channel.handle)}`}>{sensitiveText(channelLabel(channel.handle), obfuscateSensitive)}</Link>
                 </td>
                 <td>{channel.known_videos}</td>
                 <td>{channel.on_player_videos}</td>
@@ -855,7 +881,7 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
                 </td>
                 <td>{fmtDate(run.started_at)}</td>
                 <td>
-                  {run.scope} {run.channel_handle ? `(${run.channel_handle})` : ""}
+                  {run.scope} {run.channel_handle ? <>({sensitiveText(run.channel_handle, obfuscateSensitive)})</> : ""}
                 </td>
                 <td>
                   <span className={badgeClass(run.status)} {...badgeAttributes(run.status)}>{run.status}</span>
@@ -906,9 +932,9 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
                 payload.cookieBlocked.map((video) => (
                   <tr key={video.id}>
                     <td>
-                      <Link to={`/channels/${encodeURIComponent(video.channel_handle)}`}>{channelLabel(video.channel_handle)}</Link>
+                      <Link to={`/channels/${encodeURIComponent(video.channel_handle)}`}>{sensitiveText(channelLabel(video.channel_handle), obfuscateSensitive)}</Link>
                     </td>
-                    <td>{video.title}</td>
+                    <td>{sensitiveText(video.title, obfuscateSensitive)}</td>
                     <td>
                       <a href={`https://www.youtube.com/watch?v=${video.youtube_video_id}`}>{video.youtube_video_id}</a>
                     </td>
@@ -969,7 +995,8 @@ export function renderDashboardScreen(model: DashboardModel, dispatch: (msg: Das
   );
 }
 
-export function renderChannelsScreen(model: ChannelsModel): ReactElement {
+export function renderChannelsScreen(model: ChannelsModel, options: ScreenRenderOptions): ReactElement {
+  const { obfuscateSensitive } = options;
   const payload = model.data.data;
   const channelCount = payload?.channels.length ?? 0;
   const localOnlyCount = payload?.channels.reduce((sum, channel) => sum + channel.local_only_videos, 0) ?? 0;
@@ -1010,10 +1037,10 @@ export function renderChannelsScreen(model: ChannelsModel): ReactElement {
             {payload?.channels.map((channel) => (
               <tr key={channel.id}>
                 <td>
-                  <Link to={`/channels/${encodeURIComponent(channel.handle)}`}>{channelLabel(channel.handle)}</Link>
+                  <Link to={`/channels/${encodeURIComponent(channel.handle)}`}>{sensitiveText(channelLabel(channel.handle), obfuscateSensitive)}</Link>
                 </td>
                 <td>
-                  <a href={channel.url}>{channel.url}</a>
+                  <a href={channel.url}>{sensitiveText(channel.url, obfuscateSensitive)}</a>
                 </td>
                 <td>{channel.known_videos}</td>
                 <td>{channel.on_player_videos}</td>
@@ -1030,7 +1057,12 @@ export function renderChannelsScreen(model: ChannelsModel): ReactElement {
   );
 }
 
-export function renderChannelDetailScreen(model: ChannelDetailModel, dispatch: (msg: ChannelDetailMsg) => void): ReactElement {
+export function renderChannelDetailScreen(
+  model: ChannelDetailModel,
+  dispatch: (msg: ChannelDetailMsg) => void,
+  options: ScreenRenderOptions
+): ReactElement {
+  const { obfuscateSensitive } = options;
   const payload = model.data.data;
   const handle = model.handle ?? payload?.channel.handle ?? "";
   const downloadedCount = payload?.videos.filter((video) => video.status === "downloaded").length ?? 0;
@@ -1048,10 +1080,10 @@ export function renderChannelDetailScreen(model: ChannelDetailModel, dispatch: (
   return (
     <>
       <section className="hero" {...{ "box-": "double" }}>
-        <h1>{payload ? channelLabel(payload.channel.handle) : channelLabel(handle)}</h1>
+        <h1>{sensitiveText(payload ? channelLabel(payload.channel.handle) : channelLabel(handle), obfuscateSensitive)}</h1>
         <div className="detail-shell">
           <div className="detail-lead">
-            <p>{payload?.channel.url ?? ""}</p>
+            <p>{sensitiveText(payload?.channel.url ?? "", obfuscateSensitive)}</p>
             {payload ? (
               <div className="detail-meta">
                 <p className="small mono">created {fmtDate(payload.channel.created_at)}</p>
@@ -1103,7 +1135,7 @@ export function renderChannelDetailScreen(model: ChannelDetailModel, dispatch: (
             {payload?.videos.map((video) => (
               <tr key={video.id}>
                 <td>
-                  <a href={`https://www.youtube.com/watch?v=${video.youtube_video_id}`}>{video.title}</a>
+                  <a href={`https://www.youtube.com/watch?v=${video.youtube_video_id}`}>{sensitiveText(video.title, obfuscateSensitive)}</a>
                 </td>
                 <td>{video.upload_date ?? "n/a"}</td>
                 <td>
@@ -1122,7 +1154,8 @@ export function renderChannelDetailScreen(model: ChannelDetailModel, dispatch: (
   );
 }
 
-export function renderRunsScreen(model: RunsModel): ReactElement {
+export function renderRunsScreen(model: RunsModel, options: ScreenRenderOptions): ReactElement {
+  const { obfuscateSensitive } = options;
   const payload = model.data.data;
   const runCount = payload?.runs.length ?? 0;
   const activeCount = payload?.runs.filter((run) => run.status === "running").length ?? 0;
@@ -1164,7 +1197,7 @@ export function renderRunsScreen(model: RunsModel): ReactElement {
                 </td>
                 <td>{fmtDate(run.started_at)}</td>
                 <td>{fmtDate(run.finished_at)}</td>
-                <td>{summarizeRunScope(run.scope, run.channel_handle)}</td>
+                <td>{sensitiveText(summarizeRunScope(run.scope, run.channel_handle), obfuscateSensitive)}</td>
                 <td>
                   <span className={badgeClass(run.status)} {...badgeAttributes(run.status)}>{run.status}</span>
                 </td>
@@ -1180,7 +1213,8 @@ export function renderRunsScreen(model: RunsModel): ReactElement {
   );
 }
 
-export function renderRunDetailScreen(model: RunDetailModel): ReactElement {
+export function renderRunDetailScreen(model: RunDetailModel, options: ScreenRenderOptions): ReactElement {
+  const { obfuscateSensitive } = options;
   const payload = model.data.data;
   const eventCount = payload?.events.length ?? 0;
   const warningCount = payload?.events.filter((event) => event.level === "warn").length ?? 0;
@@ -1206,7 +1240,7 @@ export function renderRunDetailScreen(model: RunDetailModel): ReactElement {
               </p>
               <div className="detail-meta">
                 <p className="small mono">finished {fmtDate(payload.run.finished_at)}</p>
-                <p className="small mono">scope {summarizeRunScope(payload.run.scope, payload.run.channel_handle)}</p>
+                <p className="small mono">scope {sensitiveText(summarizeRunScope(payload.run.scope, payload.run.channel_handle), obfuscateSensitive)}</p>
                 <p className="small mono">discovered {payload.run.discovered_count}</p>
                 <p className="small mono">skipped {payload.run.skipped_count}</p>
               </div>
@@ -1245,8 +1279,8 @@ export function renderRunDetailScreen(model: RunDetailModel): ReactElement {
                   <span className={badgeClass(event.level)} {...badgeAttributes(event.level)}>{event.level}</span>
                 </td>
                 <td className="mono">{event.event_type}</td>
-                <td>{channelLabel(event.channel_handle)}</td>
-                <td>{event.message}</td>
+                <td>{sensitiveText(channelLabel(event.channel_handle), obfuscateSensitive)}</td>
+                <td>{obfuscateSensitive ? redactTerminalFragment(event.message) : event.message}</td>
               </tr>
             ))}
           </tbody>
