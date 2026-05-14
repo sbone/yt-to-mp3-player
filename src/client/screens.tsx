@@ -672,7 +672,7 @@ export function renderDashboardScreen(
     <>
       <section className="hero" {...{ "box-": "double" }}>
         <h1>Channel Sync Dashboard</h1>
-        <p>React-based control panel for yt-dlp channel tracking.</p>
+        <p>Tracks channels with yt-dlp and syncs MP3s to a basic USB player.</p>
         <div className="actions">
           <button
             type="button"
