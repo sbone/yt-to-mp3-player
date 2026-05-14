@@ -44,7 +44,7 @@ npm run dev:client
 
 - Sources come from `channels.txt`.
 - Each line can be:
-  - a channel handle like `Haminations`
+  - a channel handle (case-insensitive)
   - an `@handle`
   - a channel URL
   - a playlist URL
