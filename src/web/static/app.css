@@ -149,6 +149,7 @@
   .card {
     background: rgb(16 32 25 / 0.75);
     overflow-x: auto;
+    padding-inline: 1.2rem;
   }
 
   .hero {
