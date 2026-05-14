@@ -5,9 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "./scripts/dev.sh",
+    "dev:server": "./scripts/dev-server.sh",
+    "dev:client": "/opt/homebrew/bin/asdf exec node ./node_modules/vite/bin/vite.js",
     "build": "./scripts/build.sh",
-    "build:css": "mkdir -p dist/public && cp src/web/static/app.css dist/public/app.css",
+    "build:client": "/opt/homebrew/bin/asdf exec node ./node_modules/vite/bin/vite.js build",
+    "build:server": "/opt/homebrew/bin/asdf exec node ./node_modules/typescript/bin/tsc -p tsconfig.json",
     "check": "./scripts/check.sh",
+    "test:smoke": "/opt/homebrew/bin/asdf exec node ./node_modules/playwright/cli.js test",
     "doctor": "./scripts/doctor.sh",
     "reconcile:device": "./scripts/reconcile-device.sh",
     "rebuild:native": "./scripts/rebuild-native.sh",
@@ -17,14 +21,22 @@
     "node": "22.x"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
-    "express": "^4.21.2"
+    "@webtui/css": "0.1.7",
+    "better-sqlite3": "11.8.1",
+    "express": "4.21.2",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "react-router-dom": "7.15.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.13.10",
-    "tailwindcss": "^3.4.17",
-    "tsx": "^4.19.3",
-    "typescript": "^5.8.2"
+    "@playwright/test": "1.60.0",
+    "@types/express": "4.17.21",
+    "@types/node": "22.13.10",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.1",
+    "tsx": "4.19.3",
+    "typescript": "5.8.2",
+    "vite": "8.0.12"
   }
 }

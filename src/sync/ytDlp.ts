@@ -14,17 +14,122 @@ const COOKIE_ERROR_PATTERNS = [
   /join this channel/i
 ];
 
-function runCommand(args: string[]): Promise<{ stdout: string; stderr: string }> {
+function parseSizeToBytes(raw: string): number | null {
+  const match = raw.trim().match(/^([\d.]+)\s*([KMGTPE]?)(i)?B$/i);
+  if (!match) {
+    return null;
+  }
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  const unit = `${match[2] ?? ""}${match[3] ?? ""}`.toLowerCase();
+  const scale =
+    unit === ""
+      ? 1
+      : unit === "ki"
+        ? 1024
+        : unit === "mi"
+          ? 1024 ** 2
+          : unit === "gi"
+            ? 1024 ** 3
+            : unit === "ti"
+              ? 1024 ** 4
+              : unit === "pi"
+                ? 1024 ** 5
+                : unit === "ei"
+                  ? 1024 ** 6
+                  : null;
+  return scale === null ? null : Math.round(value * scale);
+}
+
+export interface DownloadProgress {
+  phase: "downloading" | "postprocessing";
+  percent: number | null;
+  downloadedBytes: number | null;
+  totalBytes: number | null;
+  speed: string | null;
+  eta: string | null;
+  rawLine: string;
+}
+
+function parseDownloadProgress(line: string): DownloadProgress | null {
+  const downloadMatch = line.match(
+    /^\[download\]\s+(\d+(?:\.\d+)?)%\s+of\s+(~?\s*[0-9.]+\s*[KMGTPE]?i?B)(?:\s+at\s+([^\s]+))?(?:\s+ETA\s+([0-9:]+))?/i
+  );
+  if (downloadMatch) {
+    const totalBytes = parseSizeToBytes(downloadMatch[2]!.replace(/^~\s*/, ""));
+    const percent = Number(downloadMatch[1]);
+    const downloadedBytes =
+      totalBytes !== null && Number.isFinite(percent) ? Math.round(totalBytes * (percent / 100)) : null;
+    return {
+      phase: "downloading",
+      percent: Number.isFinite(percent) ? percent : null,
+      downloadedBytes,
+      totalBytes,
+      speed: downloadMatch[3] ?? null,
+      eta: downloadMatch[4] ?? null,
+      rawLine: line
+    };
+  }
+
+  if (/^\[ffmpeg\]\s/i.test(line) || /^\[ExtractAudio\]\s/i.test(line)) {
+    return {
+      phase: "postprocessing",
+      percent: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      speed: null,
+      eta: null,
+      rawLine: line
+    };
+  }
+
+  return null;
+}
+
+function runCommand(
+  args: string[],
+  onProgress?: (progress: DownloadProgress) => void
+): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn("yt-dlp", args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+    let stdoutBuffer = "";
+    let stderrBuffer = "";
+
+    const flushLines = (buffer: string, sink: (line: string) => void): string => {
+      const normalized = buffer.replace(/\r/g, "\n");
+      const parts = normalized.split("\n");
+      const remainder = parts.pop() ?? "";
+      for (const part of parts) {
+        const line = part.trim();
+        if (line) {
+          sink(line);
+        }
+      }
+      return remainder;
+    };
+
+    const handleLine = (line: string): void => {
+      const progress = parseDownloadProgress(line);
+      if (progress) {
+        onProgress?.(progress);
+      }
+    };
 
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      stdoutBuffer += text;
+      stdoutBuffer = flushLines(stdoutBuffer, handleLine);
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      stderrBuffer += text;
+      stderrBuffer = flushLines(stderrBuffer, handleLine);
     });
 
     child.on("error", (error) => {
@@ -105,11 +210,15 @@ export type DownloadOutcome =
   | { status: "downloaded"; localPath: string; fileSize: number }
   | { status: "skipped"; reason: string };
 
-export async function downloadVideo(videoId: string): Promise<DownloadOutcome> {
+export async function downloadVideo(
+  videoId: string,
+  onProgress?: (progress: DownloadProgress) => void
+): Promise<DownloadOutcome> {
   const url = `https://www.youtube.com/watch?v=${videoId}`;
   const outTemplate = `${config.downloadsDir}/%(channel)s/%(upload_date>%Y-%m-%d)s - %(title)s [%(id)s].%(ext)s`;
   const args = [
     "-x",
+    "--newline",
     "--audio-format",
     "mp3",
     "--audio-quality",
@@ -128,7 +237,7 @@ export async function downloadVideo(videoId: string): Promise<DownloadOutcome> {
     url
   ];
 
-  const { stdout, stderr } = await runCommand(args);
+  const { stdout, stderr } = await runCommand(args, onProgress);
   const combined = `${stdout}\n${stderr}`;
 
   const candidate = combined

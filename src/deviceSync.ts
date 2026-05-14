@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { Transform } from "node:stream";
 import { config } from "./config.js";
 
 export interface PendingExportItem {
@@ -45,6 +46,9 @@ export interface DeviceSyncProgressSnapshot {
   failed: number;
   remaining: number;
   currentItem: PendingExportItem | null;
+  nextItem: PendingExportItem | null;
+  currentItemBytesCopied: number;
+  currentItemBytesTotal: number | null;
   event: "copying" | "copied" | "already-present" | "missing-source" | "failed";
 }
 
@@ -61,56 +65,73 @@ function canWriteToVolume(mountPath: string): boolean {
   }
 }
 
+function disconnectedStatus(mountPath: string | null, volumeName: string | null, reason: string): DeviceStatus {
+  return {
+    connected: false,
+    writable: false,
+    volumeName,
+    mountPath,
+    reason
+  };
+}
+
+function connectedStatus(mountPath: string, volumeName: string): DeviceStatus {
+  const writable = canWriteToVolume(mountPath);
+  return {
+    connected: true,
+    writable,
+    volumeName,
+    mountPath,
+    reason: writable ? null : `Device is mounted read-only: ${mountPath}`
+  };
+}
+
 export class DeviceSyncService {
   getStatus(): DeviceStatus {
     const configuredMountPath = config.deviceMountPath;
     if (configuredMountPath) {
-      if (existsSync(configuredMountPath)) {
-        return {
-          connected: true,
-          writable: canWriteToVolume(configuredMountPath),
-          volumeName: basename(configuredMountPath),
-          mountPath: configuredMountPath,
-          reason: canWriteToVolume(configuredMountPath) ? null : `Device is mounted read-only: ${configuredMountPath}`
-        };
+      const configuredVolumeName = basename(configuredMountPath);
+      if (!existsSync(configuredMountPath)) {
+        return disconnectedStatus(
+          configuredMountPath,
+          configuredVolumeName,
+          `Configured device mount path not found: ${configuredMountPath}`
+        );
       }
-      return {
-        connected: false,
-        writable: false,
-        volumeName: basename(configuredMountPath),
-        mountPath: configuredMountPath,
-        reason: `Configured device mount path not found: ${configuredMountPath}`
-      };
+
+      if (!isLikelyPlayerVolume(configuredMountPath)) {
+        return disconnectedStatus(
+          configuredMountPath,
+          configuredVolumeName,
+          `Configured device mount path exists but player libraries were not found: ${configuredMountPath}`
+        );
+      }
+
+      return connectedStatus(configuredMountPath, configuredVolumeName);
     }
 
     const volumesRoot = "/Volumes";
     const entries = readdirSync(volumesRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory());
-    const candidates = entries
-      .map((entry) => ({
-        volumeName: entry.name,
-        mountPath: join(volumesRoot, entry.name)
-      }))
-      .filter((entry) => isLikelyPlayerVolume(entry.mountPath));
-
-    const preferred = candidates.find((entry) => entry.volumeName === config.deviceVolumeName) ?? candidates[0];
+    const volumeEntries = entries.map((entry) => ({
+      volumeName: entry.name,
+      mountPath: join(volumesRoot, entry.name)
+    }));
+    const candidates = volumeEntries.filter((entry) => isLikelyPlayerVolume(entry.mountPath));
+    const preferredByName = volumeEntries.find((entry) => entry.volumeName === config.deviceVolumeName) ?? null;
+    const preferred = candidates.find((entry) => entry.volumeName === config.deviceVolumeName) ?? candidates[0] ?? null;
     if (!preferred) {
-      return {
-        connected: false,
-        writable: false,
-        volumeName: config.deviceVolumeName,
-        mountPath: null,
-        reason: `No mounted player volume found in ${volumesRoot}`
-      };
+      if (preferredByName) {
+        return disconnectedStatus(
+          preferredByName.mountPath,
+          preferredByName.volumeName,
+          `Mounted volume ${preferredByName.volumeName} was found, but player libraries are missing`
+        );
+      }
+
+      return disconnectedStatus(null, config.deviceVolumeName, `No mounted player volume found in ${volumesRoot}`);
     }
 
-    const writable = canWriteToVolume(preferred.mountPath);
-    return {
-      connected: true,
-      writable,
-      volumeName: preferred.volumeName,
-      mountPath: preferred.mountPath,
-      reason: writable ? null : `Device is mounted read-only: ${preferred.mountPath}`
-    };
+    return connectedStatus(preferred.mountPath, preferred.volumeName);
   }
 
   async syncPending(
@@ -130,7 +151,13 @@ export class DeviceSyncService {
       return outcome;
     }
 
-    const emitProgress = (event: DeviceSyncProgressSnapshot["event"], currentItem: PendingExportItem | null): void => {
+    const emitProgress = (
+      event: DeviceSyncProgressSnapshot["event"],
+      currentItem: PendingExportItem | null,
+      nextItem: PendingExportItem | null,
+      currentItemBytesCopied: number,
+      currentItemBytesTotal: number | null
+    ): void => {
       onProgress?.({
         total: items.length,
         processed:
@@ -140,14 +167,18 @@ export class DeviceSyncService {
         remaining:
           items.length - (outcome.copied.length + outcome.alreadyPresent.length + outcome.missingSource.length + outcome.failed.length),
         currentItem,
+        nextItem,
+        currentItemBytesCopied,
+        currentItemBytesTotal,
         event
       });
     };
 
-    for (const item of items) {
+    for (const [index, item] of items.entries()) {
+      const nextItem = items[index + 1] ?? null;
       if (!existsSync(item.local_path)) {
         outcome.missingSource.push(item);
-        emitProgress("missing-source", item);
+        emitProgress("missing-source", item, nextItem, 0, null);
         continue;
       }
 
@@ -158,33 +189,40 @@ export class DeviceSyncService {
 
       try {
         mkdirSync(targetDir, { recursive: true });
-        emitProgress("copying", item);
+        const sourceSize = statSync(item.local_path).size;
+        emitProgress("copying", item, nextItem, 0, sourceSize);
         if (existsSync(targetPath)) {
-          const sourceSize = statSync(item.local_path).size;
           const targetSize = statSync(targetPath).size;
           if (sourceSize === targetSize) {
             outcome.alreadyPresent.push(item);
-            emitProgress("already-present", item);
+            emitProgress("already-present", item, nextItem, sourceSize, sourceSize);
             continue;
           }
         }
         rmSync(tempTargetPath, { force: true });
-        await pipeline(createReadStream(item.local_path), createWriteStream(tempTargetPath));
-        const sourceSize = statSync(item.local_path).size;
+        let copiedBytes = 0;
+        const progressTap = new Transform({
+          transform(chunk, _encoding, callback) {
+            copiedBytes += chunk.length;
+            emitProgress("copying", item, nextItem, copiedBytes, sourceSize);
+            callback(null, chunk);
+          }
+        });
+        await pipeline(createReadStream(item.local_path), progressTap, createWriteStream(tempTargetPath));
         const copiedSize = statSync(tempTargetPath).size;
         if (sourceSize !== copiedSize) {
           throw new Error(`Copied file size mismatch: source=${sourceSize} target=${copiedSize}`);
         }
         renameSync(tempTargetPath, targetPath);
         outcome.copied.push(item);
-        emitProgress("copied", item);
+        emitProgress("copied", item, nextItem, sourceSize, sourceSize);
       } catch (error) {
         rmSync(tempTargetPath, { force: true });
         outcome.failed.push({
           item,
           message: error instanceof Error ? error.message : String(error)
         });
-        emitProgress("failed", item);
+        emitProgress("failed", item, nextItem, 0, null);
       }
     }
 

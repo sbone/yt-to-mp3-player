@@ -9,7 +9,9 @@ if [ -z "$ASDF_BIN" ] && [ -x /opt/homebrew/bin/asdf ]; then
 fi
 
 if [ -n "$ASDF_BIN" ]; then
-  exec "$ASDF_BIN" exec node ./node_modules/typescript/bin/tsc --noEmit
+  "$ASDF_BIN" exec node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+  exec "$ASDF_BIN" exec node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.client.json
 fi
 
-exec node ./node_modules/typescript/bin/tsc --noEmit
+node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+exec node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.client.json

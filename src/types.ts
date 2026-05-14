@@ -35,6 +35,7 @@ export interface RunSummary {
   finished_at: string | null;
   scope: string;
   status: string;
+  notes: string | null;
   discovered_count: number;
   downloaded_count: number;
   skipped_count: number;

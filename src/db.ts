@@ -191,6 +191,44 @@ export class AppDb {
       });
   }
 
+  reconcileInterruptedRuns(note: string): number {
+    const now = new Date().toISOString();
+    const runningRuns = this.db
+      .prepare(
+        `select id, channel_id
+         from sync_runs
+         where status = 'running'`
+      )
+      .all() as Array<{ id: number; channel_id: number | null }>;
+
+    if (runningRuns.length === 0) {
+      return 0;
+    }
+
+    const updateRun = this.db.prepare(
+      `update sync_runs
+       set finished_at = ?,
+           status = 'failed',
+           notes = ?
+       where id = ?`
+    );
+    const insertEvent = this.db.prepare(
+      `insert into sync_events
+       (run_id, channel_id, video_id, level, event_type, message, created_at)
+       values (?, ?, null, 'error', 'run-interrupted', ?, ?)`
+    );
+
+    const tx = this.db.transaction(() => {
+      for (const run of runningRuns) {
+        updateRun.run(now, note, run.id);
+        insertEvent.run(run.id, run.channel_id, note, now);
+      }
+      return runningRuns.length;
+    });
+
+    return tx();
+  }
+
   addEvent(
     runId: number,
     level: "info" | "warn" | "error",
@@ -515,6 +553,38 @@ export class AppDb {
     }>;
   }
 
+  listExportedVideos(limit = 500): Array<{
+    id: number;
+    title: string;
+    local_path: string;
+    downloaded_at: string | null;
+    channel_handle: string | null;
+  }> {
+    return this.db
+      .prepare(
+        `select
+          v.id,
+          v.title,
+          v.local_path,
+          v.downloaded_at,
+          c.handle as channel_handle
+         from videos v
+         left join channels c on c.id = v.channel_id
+         where v.status = 'downloaded'
+           and v.local_path is not null
+           and v.exported_at is not null
+         order by coalesce(v.exported_at, v.downloaded_at, v.last_seen_at) desc, v.id desc
+         limit ?`
+      )
+      .all(limit) as Array<{
+      id: number;
+      title: string;
+      local_path: string;
+      downloaded_at: string | null;
+      channel_handle: string | null;
+    }>;
+  }
+
   markVideosAsExported(videoIds: number[], note: string | null): { syncId: number | null; itemCount: number } {
     if (videoIds.length === 0) {
       return { syncId: null, itemCount: 0 };
@@ -544,20 +614,26 @@ export class AppDb {
     return tx();
   }
 
-  markPendingAsExported(note: string | null): { syncId: number | null; itemCount: number } {
-    const pendingIds = this.db
-      .prepare(
-        `select id
-         from videos
-         where status = 'downloaded'
-           and local_path is not null
-           and exported_at is null`
-      )
-      .all() as Array<{ id: number }>;
+  clearVideosExported(videoIds: number[]): number {
+    if (videoIds.length === 0) {
+      return 0;
+    }
 
-    return this.markVideosAsExported(
-      pendingIds.map((video) => video.id),
-      note
+    const updateVideo = this.db.prepare(
+      `update videos
+       set exported_at = null,
+           exported_device_sync_id = null
+       where id = ?`
     );
+
+    const tx = this.db.transaction(() => {
+      for (const videoId of videoIds) {
+        updateVideo.run(videoId);
+      }
+      return videoIds.length;
+    });
+
+    return tx();
   }
+
 }

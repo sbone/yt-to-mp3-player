@@ -3,26 +3,35 @@ import { DeviceSyncService } from "../deviceSync.js";
 import { reconcilePendingAgainstDevice } from "../deviceReconcile.js";
 import { channelUrlForHandle, loadChannelSources } from "../channelSource.js";
 import { Logger } from "../logger.js";
+import { existsSync, statSync } from "node:fs";
 import type { ChannelRecord, SyncCounters } from "../types.js";
-import { downloadVideo, discoverChannel, isCookieAuthError } from "./ytDlp.js";
+import { downloadVideo, discoverChannel, isCookieAuthError, type DownloadProgress } from "./ytDlp.js";
 import { ExistingDownloadIndex } from "./fileIndex.js";
 import { config } from "../config.js";
+import type { PendingExportItem } from "../deviceSync.js";
 
-interface SyncState {
+export interface SyncState {
   library: LibrarySyncState;
   player: PlayerSyncState;
   notifications: SyncNotification[];
 }
 
-interface LibrarySyncState {
+export interface LibrarySyncState {
   running: boolean;
   startedAt: string | null;
   runId: number | null;
   scope: "all" | "single-channel" | null;
   targetHandle: string | null;
+  currentItemTitle: string | null;
+  currentItemPercent: number | null;
+  currentItemDownloadedBytes: number | null;
+  currentItemTotalBytes: number | null;
+  currentItemPhase: "downloading" | "postprocessing" | null;
+  currentItemSpeed: string | null;
+  currentItemEta: string | null;
 }
 
-interface PlayerSyncState {
+export interface PlayerSyncState {
   running: boolean;
   startedAt: string | null;
   runId: number | null;
@@ -33,12 +42,19 @@ interface PlayerSyncState {
   failed: number;
   remaining: number;
   currentItemTitle: string | null;
+  nextPendingItem: PendingExportItem | null;
+  totalItems: number;
+  processedItems: number;
+  totalBytes: number;
+  completedBytes: number;
+  currentItemBytesCopied: number;
+  currentItemBytesTotal: number | null;
   lastCompletedAt: string | null;
   lastSummary: string | null;
   lastFailedCount: number;
 }
 
-interface SyncNotification {
+export interface SyncNotification {
   id: string;
   kind: "library" | "player";
   title: string;
@@ -64,6 +80,17 @@ function nextCounters(base: SyncCounters, delta: Partial<SyncCounters>): SyncCou
   };
 }
 
+function safeFileSize(item: PendingExportItem): number {
+  if (!existsSync(item.local_path)) {
+    return 0;
+  }
+  try {
+    return statSync(item.local_path).size;
+  } catch {
+    return 0;
+  }
+}
+
 export class SyncService {
   private state: SyncState = {
     library: {
@@ -71,7 +98,14 @@ export class SyncService {
       startedAt: null,
       runId: null,
       scope: null,
-      targetHandle: null
+      targetHandle: null,
+      currentItemTitle: null,
+      currentItemPercent: null,
+      currentItemDownloadedBytes: null,
+      currentItemTotalBytes: null,
+      currentItemPhase: null,
+      currentItemSpeed: null,
+      currentItemEta: null
     },
     player: {
       running: false,
@@ -84,6 +118,13 @@ export class SyncService {
       failed: 0,
       remaining: 0,
       currentItemTitle: null,
+      nextPendingItem: null,
+      totalItems: 0,
+      processedItems: 0,
+      totalBytes: 0,
+      completedBytes: 0,
+      currentItemBytesCopied: 0,
+      currentItemBytesTotal: null,
       lastCompletedAt: null,
       lastSummary: null,
       lastFailedCount: 0
@@ -185,7 +226,14 @@ export class SyncService {
       startedAt: new Date().toISOString(),
       runId,
       scope: "all",
-      targetHandle: null
+      targetHandle: null,
+      currentItemTitle: null,
+      currentItemPercent: null,
+      currentItemDownloadedBytes: null,
+      currentItemTotalBytes: null,
+      currentItemPhase: null,
+      currentItemSpeed: null,
+      currentItemEta: null
     });
 
     let totals = { ...ZERO_COUNTERS };
@@ -238,7 +286,14 @@ export class SyncService {
         startedAt: null,
         runId: null,
         scope: null,
-        targetHandle: null
+        targetHandle: null,
+        currentItemTitle: null,
+        currentItemPercent: null,
+        currentItemDownloadedBytes: null,
+        currentItemTotalBytes: null,
+        currentItemPhase: null,
+        currentItemSpeed: null,
+        currentItemEta: null
       });
     }
   }
@@ -253,7 +308,14 @@ export class SyncService {
       startedAt: new Date().toISOString(),
       runId,
       scope: "single-channel",
-      targetHandle: handle
+      targetHandle: handle,
+      currentItemTitle: null,
+      currentItemPercent: null,
+      currentItemDownloadedBytes: null,
+      currentItemTotalBytes: null,
+      currentItemPhase: null,
+      currentItemSpeed: null,
+      currentItemEta: null
     });
 
     this.logger.info(`run=${runId} sync-channel started handle=${handle}`);
@@ -295,7 +357,14 @@ export class SyncService {
         startedAt: null,
         runId: null,
         scope: null,
-        targetHandle: null
+        targetHandle: null,
+        currentItemTitle: null,
+        currentItemPercent: null,
+        currentItemDownloadedBytes: null,
+        currentItemTotalBytes: null,
+        currentItemPhase: null,
+        currentItemSpeed: null,
+        currentItemEta: null
       });
     }
   }
@@ -416,6 +485,13 @@ export class SyncService {
       failed: 0,
       remaining: 0,
       currentItemTitle: null,
+      nextPendingItem: null,
+      totalItems: 0,
+      processedItems: 0,
+      totalBytes: 0,
+      completedBytes: 0,
+      currentItemBytesCopied: 0,
+      currentItemBytesTotal: null,
       lastSummary: null
     });
 
@@ -444,7 +520,11 @@ export class SyncService {
       this.setPlayerState({
         lastCompletedAt: new Date().toISOString(),
         lastSummary: summary,
-        currentItemTitle: null
+        currentItemTitle: null,
+        nextPendingItem: null,
+        completedBytes: this.state.player.totalBytes,
+        currentItemBytesCopied: 0,
+        currentItemBytesTotal: null
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -468,7 +548,11 @@ export class SyncService {
         lastCompletedAt: new Date().toISOString(),
         lastSummary: message,
         lastFailedCount: Math.max(this.state.player.lastFailedCount, 1),
-        currentItemTitle: null
+        currentItemTitle: null,
+        nextPendingItem: null,
+        currentItemBytesCopied: 0,
+        currentItemBytesTotal: null,
+        completedBytes: this.state.player.completedBytes
       });
     } finally {
       this.setPlayerState({
@@ -477,7 +561,12 @@ export class SyncService {
         runId: null,
         targetVolume: device.volumeName,
         note: null,
-        currentItemTitle: null
+        currentItemTitle: null,
+        nextPendingItem: null,
+        totalBytes: 0,
+        completedBytes: 0,
+        currentItemBytesCopied: 0,
+        currentItemBytesTotal: null
       });
     }
   }
@@ -493,6 +582,21 @@ export class SyncService {
         lastFailedCount: 0
       });
       return message;
+    }
+
+    const exportedBefore = this.db.listExportedVideos(5000);
+    const exportedReconciliation = reconcilePendingAgainstDevice(exportedBefore, device.mountPath);
+    const missingExportedIds = exportedReconciliation.unmatched.map((item) => item.item.id);
+
+    if (missingExportedIds.length > 0) {
+      this.db.clearVideosExported(missingExportedIds);
+      this.db.addEvent(
+        runId,
+        "warn",
+        "device-export-requeue-missing",
+        `re-queued ${missingExportedIds.length} exported track${missingExportedIds.length === 1 ? "" : "s"} missing from device`
+      );
+      this.logger.warn(`run=${runId} re-queued exported tracks missing from device count=${missingExportedIds.length}`);
     }
 
     const pendingBefore = this.db.listPendingExportVideos(5000);
@@ -517,12 +621,25 @@ export class SyncService {
     }
 
     const pendingAfterReconcile = this.db.listPendingExportVideos(5000);
+    const totalItems = reconciledIds.length + pendingAfterReconcile.length;
+    const reconciledBytes = pendingBefore
+      .filter((item) => reconciledIds.includes(item.id))
+      .reduce((sum, item) => sum + safeFileSize(item), 0);
+    const pendingBytes = pendingAfterReconcile.reduce((sum, item) => sum + safeFileSize(item), 0);
+    const totalBytes = reconciledBytes + pendingBytes;
     this.setPlayerState({
       reconciled: reconciledIds.length,
       copied: 0,
       failed: 0,
       remaining: pendingAfterReconcile.length,
       currentItemTitle: null,
+      nextPendingItem: pendingAfterReconcile[0] ?? null,
+      totalItems,
+      processedItems: reconciledIds.length,
+      totalBytes,
+      completedBytes: reconciledBytes,
+      currentItemBytesCopied: 0,
+      currentItemBytesTotal: null,
       lastFailedCount: 0
     });
     if (pendingAfterReconcile.length === 0) {
@@ -543,12 +660,21 @@ export class SyncService {
       return message;
     }
 
+    let completedPendingBytes = 0;
     const copyOutcome = await this.deviceSyncService.syncPending(pendingAfterReconcile, (progress) => {
+      if (progress.event !== "copying" && progress.currentItem) {
+        completedPendingBytes += progress.currentItemBytesTotal ?? safeFileSize(progress.currentItem);
+      }
       this.setPlayerState({
         copied: progress.copied,
         failed: progress.failed,
         remaining: progress.remaining,
         currentItemTitle: progress.event === "copying" ? progress.currentItem?.title ?? null : null,
+        nextPendingItem: progress.nextItem,
+        processedItems: reconciledIds.length + progress.processed,
+        completedBytes: reconciledBytes + completedPendingBytes,
+        currentItemBytesCopied: progress.event === "copying" ? progress.currentItemBytesCopied : 0,
+        currentItemBytesTotal: progress.event === "copying" ? progress.currentItemBytesTotal : null,
         lastFailedCount: progress.failed
       });
       if (progress.event !== "copying" && progress.currentItem) {
@@ -595,6 +721,12 @@ export class SyncService {
       failed: copyOutcome.failed.length,
       remaining: copyOutcome.failed.length + copyOutcome.missingSource.length,
       currentItemTitle: null,
+      nextPendingItem: null,
+      processedItems: totalItems,
+      totalBytes,
+      completedBytes: totalBytes,
+      currentItemBytesCopied: 0,
+      currentItemBytesTotal: null,
       lastFailedCount: copyOutcome.failed.length
     });
     return summary;
@@ -664,7 +796,26 @@ export class SyncService {
         }
 
         try {
-          const result = await downloadVideo(item.youtubeVideoId);
+          this.setLibraryState({
+            currentItemTitle: item.title,
+            currentItemPercent: 0,
+            currentItemDownloadedBytes: 0,
+            currentItemTotalBytes: null,
+            currentItemPhase: "downloading",
+            currentItemSpeed: null,
+            currentItemEta: null
+          });
+          const result = await downloadVideo(item.youtubeVideoId, (progress: DownloadProgress) => {
+            this.setLibraryState({
+              currentItemTitle: item.title,
+              currentItemPercent: progress.percent,
+              currentItemDownloadedBytes: progress.downloadedBytes,
+              currentItemTotalBytes: progress.totalBytes,
+              currentItemPhase: progress.phase,
+              currentItemSpeed: progress.speed,
+              currentItemEta: progress.eta
+            });
+          });
           if (result.status === "downloaded") {
             this.db.markVideoDownloaded(upsert.id, result.localPath, result.fileSize);
             this.db.addEvent(
@@ -714,6 +865,16 @@ export class SyncService {
             counters = nextCounters(counters, { failed: 1 });
             ok = false;
           }
+        } finally {
+          this.setLibraryState({
+            currentItemTitle: null,
+            currentItemPercent: null,
+            currentItemDownloadedBytes: null,
+            currentItemTotalBytes: null,
+            currentItemPhase: null,
+            currentItemSpeed: null,
+            currentItemEta: null
+          });
         }
       }
 

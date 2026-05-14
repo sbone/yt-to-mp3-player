@@ -7,6 +7,10 @@ import { config } from "./config.js";
 
 const logger = new Logger();
 const db = new AppDb();
+const interruptedRuns = db.reconcileInterruptedRuns("Interrupted by server shutdown or restart.");
+if (interruptedRuns > 0) {
+  logger.warn(`reconciled ${interruptedRuns} interrupted sync run${interruptedRuns === 1 ? "" : "s"} on startup`);
+}
 const deviceSyncService = new DeviceSyncService();
 const syncService = new SyncService(db, logger, deviceSyncService);
 const app = createServer(db, syncService, deviceSyncService, logger);

@@ -9,11 +9,11 @@ if [ -z "$ASDF_BIN" ] && [ -x /opt/homebrew/bin/asdf ]; then
 fi
 
 if [ -n "$ASDF_BIN" ]; then
-  mkdir -p ./dist/public
-  cp ./src/web/static/app.css ./dist/public/app.css
-  exec "$ASDF_BIN" exec node ./node_modules/typescript/bin/tsc -p tsconfig.json
+  rm -rf ./dist
+  "$ASDF_BIN" exec node ./node_modules/typescript/bin/tsc -p tsconfig.json
+  exec "$ASDF_BIN" exec node ./node_modules/vite/bin/vite.js build
 fi
 
-mkdir -p ./dist/public
-cp ./src/web/static/app.css ./dist/public/app.css
-exec node ./node_modules/typescript/bin/tsc -p tsconfig.json
+rm -rf ./dist
+node ./node_modules/typescript/bin/tsc -p tsconfig.json
+exec ./node_modules/.bin/vite build
