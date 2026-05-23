@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 
 const rootDir = process.cwd();
@@ -7,6 +7,10 @@ const dataDir = mode === "demo" ? resolve(rootDir, "data/demo") : resolve(rootDi
 const logsDir = resolve(dataDir, "logs");
 const downloadsDir = mode === "demo" ? resolve(dataDir, "downloads") : resolve(rootDir, "downloads");
 const demoPlayerDir = resolve(dataDir, "player");
+
+if (mode === "demo" && process.env.DEMO_RESET === "1") {
+  rmSync(dataDir, { recursive: true, force: true });
+}
 
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(logsDir, { recursive: true });

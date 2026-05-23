@@ -13,7 +13,7 @@ export default defineConfig({
     headless: true
   },
   webServer: {
-    command: `PORT=${appPort} DEV_CLIENT_PORT=${clientPort} API_PROXY_TARGET=${appOrigin} ENABLE_TEST_API=1 npm run dev`,
+    command: `DEMO_MODE=1 DEMO_RESET=1 PORT=${appPort} DEV_CLIENT_PORT=${clientPort} API_PROXY_TARGET=${appOrigin} ENABLE_TEST_API=1 npm run dev`,
     url: appOrigin,
     reuseExistingServer: false,
     timeout: 120_000
