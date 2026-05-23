@@ -73,6 +73,33 @@ const demoLibrary: Record<string, DiscoveredVideo[]> = {
   ]
 };
 
+function demoSourceLabel(sourceKey: string): string {
+  if (sourceKey === "demo-field-notes") {
+    return "Field Notes Radio";
+  }
+  if (sourceKey === "demo-workshop") {
+    return "Workshop Talks";
+  }
+  if (sourceKey === "demo-recovery") {
+    return "Recovery Lab";
+  }
+  return sourceKey;
+}
+
+function createDynamicDemoVideo(sourceKey: string, sequence: number): DiscoveredVideo {
+  const safeKey = sourceKey.replace(/[^a-z0-9._:-]+/gi, "-").slice(0, 48) || "source";
+  const timestamp = Date.now();
+  return {
+    youtubeVideoId: `demo-${safeKey}-live-${timestamp}-${sequence}`,
+    channelName: demoSourceLabel(sourceKey),
+    title: `Demo live item ${sequence} from ${demoSourceLabel(sourceKey)}`,
+    uploadDate: "2026-03-15",
+    durationSeconds: 900 + sequence,
+    webpageUrl: `https://example.invalid/${encodeURIComponent(safeKey)}/live-${timestamp}-${sequence}`,
+    thumbnailUrl: null
+  };
+}
+
 function fallbackDemoVideo(sourceKey: string): DiscoveredVideo {
   const safeKey = sourceKey.replace(/[^a-z0-9._:-]+/gi, "-").slice(0, 48) || "source";
   return {
@@ -87,12 +114,18 @@ function fallbackDemoVideo(sourceKey: string): DiscoveredVideo {
 }
 
 class DemoMediaProvider implements MediaProvider {
+  private readonly generatedVideos = new Map<string, DiscoveredVideo>();
+  private sequence = 0;
+
   async discoverSource(_sourceUrl: string, sourceKey: string): Promise<DiscoveredVideo[]> {
-    return demoLibrary[sourceKey] ?? [fallbackDemoVideo(sourceKey)];
+    this.sequence += 1;
+    const liveVideo = createDynamicDemoVideo(sourceKey, this.sequence);
+    this.generatedVideos.set(liveVideo.youtubeVideoId, liveVideo);
+    return [liveVideo, ...(demoLibrary[sourceKey] ?? [fallbackDemoVideo(sourceKey)])];
   }
 
   async downloadAudio(videoId: string, onProgress?: (progress: DownloadProgress) => void): Promise<DownloadOutcome> {
-    const video = Object.values(demoLibrary).flat().find((item) => item.youtubeVideoId === videoId);
+    const video = this.generatedVideos.get(videoId) ?? Object.values(demoLibrary).flat().find((item) => item.youtubeVideoId === videoId);
     const title = video?.title ?? `Demo track ${videoId}`;
     const channel = video?.channelName ?? "Demo Source";
     const date = video?.uploadDate ?? "2026-03-01";

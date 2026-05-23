@@ -10,6 +10,7 @@ import { ExistingDownloadIndex } from "./fileIndex.js";
 import { config } from "../config.js";
 import type { PendingExportItem } from "../deviceSync.js";
 import { createMediaProvider, type MediaProvider } from "./mediaProvider.js";
+import { ensureDemoPendingExport } from "../demoSeed.js";
 
 export interface SyncState {
   library: LibrarySyncState;
@@ -601,6 +602,7 @@ export class SyncService {
       this.logger.warn(`run=${runId} re-queued exported tracks missing from device count=${missingExportedIds.length}`);
     }
 
+    ensureDemoPendingExport(this.db);
     const pendingBefore = this.db.listPendingExportVideos(5000);
     const reconciliation = reconcilePendingAgainstDevice(pendingBefore, device.mountPath);
     const reconciledIds = [

@@ -80,3 +80,26 @@ export function seedDemoData(db: AppDb): void {
     }
   }
 }
+
+export function ensureDemoPendingExport(db: AppDb): void {
+  if (!config.isDemo || db.listPendingExportVideos(1).length > 0) {
+    return;
+  }
+
+  const sequence = Date.now();
+  const channel = db.upsertChannel("demo-field-notes", "https://example.invalid/@demo-field-notes/videos");
+  const video: DiscoveredVideo = {
+    youtubeVideoId: `demo-pending-${sequence}`,
+    channelName: "Field Notes Radio",
+    title: `Demo queued player sync ${sequence}`,
+    uploadDate: "2026-03-20",
+    durationSeconds: 960,
+    webpageUrl: `https://example.invalid/demo-pending-${sequence}`,
+    thumbnailUrl: null
+  };
+  const upserted = db.upsertDiscoveredVideo(channel.id, video);
+  const localPath = `${config.downloadsDir}/${video.channelName}/${video.uploadDate} - ${video.title} [${video.youtubeVideoId}].mp3`;
+  mkdirSync(dirname(localPath), { recursive: true });
+  writeFileSync(localPath, `Demo MP3 placeholder for ${video.title}\n`.repeat(32_000), "utf8");
+  db.markVideoDownloaded(upserted.id, localPath, 1_200_000);
+}
