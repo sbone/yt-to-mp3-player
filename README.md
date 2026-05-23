@@ -4,6 +4,10 @@ A local-first TypeScript app for managing audio sources and syncing downloaded a
 
 This app can use `yt-dlp` and `ffmpeg` with user-provided media URLs. Use it only for media you have the right to access, download, and transfer for personal use.
 
+## Screenshot
+
+<img width="2880" height="1750" alt="updated ui" src="https://github.com/user-attachments/assets/b31d91ec-adf8-42a3-bde3-1d41794d73db" />
+
 ## Problem
 
 Low-cost dedicated MP3 players are useful for offline listening, but their sync workflow is brittle: users need to track sources, download audio, copy files onto a mounted device, recover after interrupted copies, and understand whether the player is safe to disconnect.
@@ -60,6 +64,7 @@ npm run start
 - Existing matching files already on the player are reconciled as exported.
 - Missing exported files are re-queued so the next sync can restore them.
 - Cookie/auth failures are tracked separately for recovery.
+- Source list entries can be a channel handle, `@handle`, channel URL, or playlist URL.
 
 ## Constraints
 
