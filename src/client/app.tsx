@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { BrowserRouter, Link, useLocation, useNavigate } from "react-router-dom";
 import type { ActionResponse, SyncAndExportActionResponse } from "../api/contracts.js";
 import {
+  addSource,
   getChannelDetail,
   getChannels,
   getDashboard,
@@ -148,7 +149,7 @@ function shellTitle(route: Route): string {
     case "dashboard":
       return "Dashboard";
     case "channels":
-      return "Channels";
+      return "Sources";
     case "channel-detail":
       return `Channel ${route.handle}`;
     case "runs":
@@ -214,6 +215,13 @@ function AppProgram(): ReactElement {
             .then((data) => dispatch({ type: "ChannelsMsg", msg: { type: "Loaded", data } }))
             .catch((error) =>
               dispatch({ type: "ChannelsMsg", msg: { type: "LoadFailed", error: commandFailureMessage(error) } })
+            );
+          break;
+        case "AddSource":
+          void addSource(cmd.source)
+            .then((result) => dispatch({ type: "ChannelsMsg", msg: { type: "SourceAdded", result } }))
+            .catch((error) =>
+              dispatch({ type: "ChannelsMsg", msg: { type: "SourceAddFailed", error: commandFailureMessage(error) } })
             );
           break;
         case "FetchChannelDetail":
@@ -346,7 +354,7 @@ function AppProgram(): ReactElement {
   }, [program.model.route.kind]);
 
   useEffect(() => {
-    document.title = `${shellTitle(program.model.route)} · yt-to-audio`;
+    document.title = `${shellTitle(program.model.route)} · Local Audio Device Sync`;
   }, [program.model.route]);
 
   const route = program.model.route;
@@ -364,8 +372,8 @@ function AppProgram(): ReactElement {
       <header className="topbar">
         <div className="topbar-inner">
           <Link className="brand" to="/">
-            <span className="brand-mark">yt-to-audio</span>
-            <span className="brand-subtitle">Channel sync dashboard</span>
+            <span className="brand-mark">Local Audio Device Sync</span>
+            <span className="brand-subtitle">Offline player sync dashboard</span>
           </Link>
           <nav className="nav">
             <button
@@ -379,7 +387,7 @@ function AppProgram(): ReactElement {
               Dashboard
             </Link>
             <Link className={topNavSection === "channels" ? "nav-link nav-link-active" : "nav-link"} to="/channels">
-              Channels
+              Sources
             </Link>
             <Link className={topNavSection === "runs" ? "nav-link nav-link-active" : "nav-link"} to="/runs">
               Runs
@@ -393,7 +401,11 @@ function AppProgram(): ReactElement {
               obfuscateSensitive
             })
           : null}
-        {route.kind === "channels" ? renderChannelsScreen(program.model.channels, { obfuscateSensitive }) : null}
+        {route.kind === "channels"
+          ? renderChannelsScreen(program.model.channels, (msg) => dispatch({ type: "ChannelsMsg", msg }), {
+              obfuscateSensitive
+            })
+          : null}
         {route.kind === "channel-detail"
           ? renderChannelDetailScreen(program.model.channelDetail, (msg) => dispatch({ type: "ChannelDetailMsg", msg }), {
               obfuscateSensitive

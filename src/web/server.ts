@@ -3,14 +3,17 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
   ActionResponse,
+  AddSourceResponse,
   ChannelDetailDto,
   ChannelsDto,
   DashboardDto,
   LiveActivityDto,
   RunDetailDto,
   RunsDto,
+  SourcesDto,
   SyncAndExportActionResponse
 } from "../api/contracts.js";
+import { addChannelSource, loadChannelSources } from "../channelSource.js";
 import { config } from "../config.js";
 import { AppDb } from "../db.js";
 import { DeviceSyncService } from "../deviceSync.js";
@@ -38,6 +41,7 @@ function createDashboardPayload(
     syncState.player.lastFailedCount === 0;
 
   return {
+    mode: config.mode,
     channels,
     runs,
     cookieBlocked,
@@ -65,6 +69,7 @@ function createLivePayload(
     deviceStatus.connected && !state.player.running && state.player.remaining === 0 && state.player.lastFailedCount === 0;
 
   return {
+    mode: config.mode,
     state,
     events: db.listRecentEvents(120).reverse(),
     deviceStatus: override?.deviceStatus ?? deviceStatus,
@@ -135,9 +140,32 @@ export function createServer(
 
   app.get("/api/channels", (_req, res) => {
     const payload: ChannelsDto = {
-      channels: db.listChannelsOverview()
+      channels: db.listChannelsOverview(),
+      sources: loadChannelSources()
     };
     res.json(payload);
+  });
+
+  app.get("/api/sources", (_req, res) => {
+    const payload: SourcesDto = {
+      sources: loadChannelSources()
+    };
+    res.json(payload);
+  });
+
+  app.post("/api/sources", (req, res) => {
+    const raw = typeof req.body?.source === "string" ? req.body.source : "";
+    try {
+      const source = addChannelSource(raw);
+      db.upsertChannel(source.key, source.url);
+      const payload: AddSourceResponse = {
+        source,
+        message: `Source added: ${source.key}`
+      };
+      res.status(201).json(payload);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   app.get("/api/channels/:handle", (req, res) => {

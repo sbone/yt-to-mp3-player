@@ -120,6 +120,7 @@ export interface CookieBlockedVideoDto {
 }
 
 export interface DashboardDto {
+  mode: "normal" | "demo";
   channels: ChannelOverview[];
   runs: RunSummary[];
   cookieBlocked: CookieBlockedVideoDto[];
@@ -133,6 +134,21 @@ export interface DashboardDto {
 
 export interface ChannelsDto {
   channels: ChannelOverview[];
+  sources: SourceDto[];
+}
+
+export interface SourceDto {
+  key: string;
+  url: string;
+}
+
+export interface SourcesDto {
+  sources: SourceDto[];
+}
+
+export interface AddSourceResponse {
+  source: SourceDto;
+  message: string;
 }
 
 export interface ChannelDetailDto {
@@ -150,6 +166,7 @@ export interface RunDetailDto {
 }
 
 export interface LiveActivityDto {
+  mode: "normal" | "demo";
   state: SyncState;
   events: LiveEventDto[];
   deviceStatus: DeviceStatus;

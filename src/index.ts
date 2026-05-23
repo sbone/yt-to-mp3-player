@@ -4,9 +4,11 @@ import { Logger } from "./logger.js";
 import { SyncService } from "./sync/syncService.js";
 import { createServer } from "./web/server.js";
 import { config } from "./config.js";
+import { seedDemoData } from "./demoSeed.js";
 
 const logger = new Logger();
 const db = new AppDb();
+seedDemoData(db);
 const interruptedRuns = db.reconcileInterruptedRuns("Interrupted by server shutdown or restart.");
 if (interruptedRuns > 0) {
   logger.warn(`reconciled ${interruptedRuns} interrupted sync run${interruptedRuns === 1 ? "" : "s"} on startup`);
