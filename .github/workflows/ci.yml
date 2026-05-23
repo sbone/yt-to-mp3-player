@@ -67,6 +67,7 @@ jobs:
             const marker = '<!-- portfolio-screenshots -->';
             const artifactUrl = '${{ steps.screenshots-artifact.outputs.artifact-url }}';
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const pagesUrl = `https://${context.repo.owner}.github.io/${context.repo.repo}/`;
             const files = [
               '01-dashboard-empty-state.png',
               '02-source-management.png',
@@ -80,6 +81,8 @@ jobs:
               '## Portfolio screenshots',
               '',
               `Generated screenshots are available in the [portfolio-screenshots artifact](${artifactUrl}).`,
+              '',
+              `Latest main-branch screenshot gallery: ${pagesUrl}`,
               '',
               `Workflow run: ${runUrl}`,
               '',
