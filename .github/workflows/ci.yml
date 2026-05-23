@@ -32,3 +32,23 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Generate portfolio screenshots
+        run: npm run screenshots
+
+      - name: Upload portfolio screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: portfolio-screenshots
+          path: artifacts/screenshots/*.png
+          retention-days: 14
+
+      - name: Summarize screenshots
+        run: |
+          {
+            echo "## Portfolio screenshots"
+            echo
+            echo "Generated screenshots are attached to this run as the \`portfolio-screenshots\` artifact."
+            echo
+            find artifacts/screenshots -maxdepth 1 -name '*.png' -print | sort | sed 's#^#- #'
+          } >> "$GITHUB_STEP_SUMMARY"

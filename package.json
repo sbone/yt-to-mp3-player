@@ -13,6 +13,7 @@
     "check": "./scripts/check.sh",
     "test": "playwright test",
     "test:smoke": "playwright test",
+    "screenshots": "PLAYWRIGHT_SCREENSHOTS=1 playwright test tests/screenshots.spec.ts",
     "demo": "DEMO_MODE=1 ./scripts/dev.sh",
     "doctor": "./scripts/doctor.sh",
     "reconcile:device": "./scripts/reconcile-device.sh",
