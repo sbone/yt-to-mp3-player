@@ -29,21 +29,27 @@ test.describe("dev SPA smoke", () => {
     await page.goto("/");
     await expect(page.getByText("Device status:")).toBeVisible();
 
-    await request.post("/api/debug/live", {
-      data: {
-        deviceStatus: {
-          connected: true,
-          writable: true,
-          volumeName: "TEST-PLAYER",
-          mountPath: "/Volumes/TEST-PLAYER",
-          reason: null
+    await expect
+      .poll(
+        async () => {
+          await request.post("/api/debug/live", {
+            data: {
+              deviceStatus: {
+                connected: true,
+                writable: true,
+                volumeName: "TEST-PLAYER",
+                mountPath: "/Volumes/TEST-PLAYER",
+                reason: null
+              },
+              deviceReadyForExport: true,
+              safeToDisconnect: true
+            }
+          });
+          return page.getByText("connected (TEST-PLAYER)").isVisible();
         },
-        deviceReadyForExport: true,
-        safeToDisconnect: true
-      }
-    });
-
-    await expect(page.getByText("connected (TEST-PLAYER)")).toBeVisible();
+        { timeout: 10_000 }
+      )
+      .toBeTruthy();
     expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
   });
 
@@ -89,7 +95,8 @@ test.describe("dev SPA smoke", () => {
     await page.getByRole("button", { name: "Refresh Library", exact: true }).click();
 
     await expect
-      .poll(async () => {
+      .poll(
+        async () => {
         const response = await request.get("/api/dashboard");
         const dashboard = (await response.json()) as {
           channels: Array<{ handle: string; downloaded_videos: number }>;
@@ -97,7 +104,9 @@ test.describe("dev SPA smoke", () => {
         };
         const downloaded = dashboard.channels.reduce((sum, channel) => sum + channel.downloaded_videos, 0);
         return !dashboard.syncState.library.running && downloaded > 1;
-      })
+        },
+        { timeout: 20_000 }
+      )
       .toBeTruthy();
     expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
   });
@@ -107,14 +116,17 @@ test.describe("dev SPA smoke", () => {
 
     await request.post("/api/sync");
     await expect
-      .poll(async () => {
+      .poll(
+        async () => {
         const response = await request.get("/api/live");
         const live = (await response.json()) as {
           state: { library: { running: boolean } };
           pendingExport: unknown[];
         };
         return live.state.library.running ? -1 : live.pendingExport.length;
-      })
+        },
+        { timeout: 20_000 }
+      )
       .toBeGreaterThan(0);
 
     await page.goto("/");
@@ -122,7 +134,8 @@ test.describe("dev SPA smoke", () => {
     await page.getByRole("button", { name: "Sync Player", exact: true }).click();
 
     await expect
-      .poll(async () => {
+      .poll(
+        async () => {
         const response = await request.get("/api/live");
         const live = (await response.json()) as {
           state: { player: { running: boolean; lastSummary: string | null } };
@@ -133,7 +146,9 @@ test.describe("dev SPA smoke", () => {
           pending: live.pendingExport.length,
           summary: live.state.player.lastSummary
         };
-      })
+        },
+        { timeout: 20_000 }
+      )
       .toEqual(expect.objectContaining({ running: false, pending: 0 }));
 
     await expect(page.locator(".sync-notification-summary").getByText(/Synced \d+ tracks? to player/)).toBeVisible();

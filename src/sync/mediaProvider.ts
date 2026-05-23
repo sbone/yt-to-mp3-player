@@ -24,6 +24,12 @@ class RealMediaProvider implements MediaProvider {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 const demoLibrary: Record<string, DiscoveredVideo[]> = {
   "demo-field-notes": [
     {
@@ -93,25 +99,31 @@ class DemoMediaProvider implements MediaProvider {
     const path = `${config.downloadsDir}/${channel}/${date} - ${title} [${videoId}].mp3`;
 
     mkdirSync(dirname(path), { recursive: true });
-    onProgress?.({
-      phase: "downloading",
-      percent: 35,
-      downloadedBytes: 35_000,
-      totalBytes: 100_000,
-      speed: "demo",
-      eta: "00:01",
-      rawLine: "demo download 35%"
-    });
-    writeFileSync(path, `Demo MP3 placeholder for ${title}\n`, "utf8");
+    const totalBytes = 1_200_000;
+    for (const percent of [10, 28, 46, 64, 82, 94]) {
+      onProgress?.({
+        phase: "downloading",
+        percent,
+        downloadedBytes: Math.round(totalBytes * (percent / 100)),
+        totalBytes,
+        speed: "demo 420 KiB/s",
+        eta: `${Math.max(1, Math.ceil((100 - percent) / 22)).toString().padStart(2, "0")}s`,
+        rawLine: `demo download ${percent}%`
+      });
+      await sleep(140);
+    }
+    writeFileSync(path, `Demo MP3 placeholder for ${title}\n`.repeat(32_000), "utf8");
+    await sleep(160);
     onProgress?.({
       phase: "postprocessing",
       percent: 100,
-      downloadedBytes: 100_000,
-      totalBytes: 100_000,
+      downloadedBytes: totalBytes,
+      totalBytes,
       speed: "demo",
       eta: "00:00",
       rawLine: "demo postprocess complete"
     });
+    await sleep(140);
 
     return { status: "downloaded", localPath: path, fileSize: statSync(path).size };
   }
