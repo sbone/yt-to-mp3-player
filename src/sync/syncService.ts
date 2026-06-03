@@ -576,6 +576,7 @@ export class SyncService {
   }
 
   private async exportPendingToDevice(runId: number, note: string | null = null): Promise<string> {
+    this.db.reconcileChannelSources(loadChannelSources());
     const device = this.deviceSyncService.getStatus();
     if (!device.connected || !device.mountPath) {
       const message = `device export skipped: ${device.reason ?? "device not connected"}`;

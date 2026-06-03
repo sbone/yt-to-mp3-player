@@ -590,8 +590,9 @@ export class AppDb {
           v.downloaded_at,
           c.handle as channel_handle
          from videos v
-         left join channels c on c.id = v.channel_id
+         join channels c on c.id = v.channel_id
          where v.status = 'downloaded'
+           and c.active = 1
            and v.local_path is not null
            and v.exported_at is null
          order by coalesce(v.downloaded_at, v.last_seen_at) desc, v.id desc
@@ -622,8 +623,9 @@ export class AppDb {
           v.downloaded_at,
           c.handle as channel_handle
          from videos v
-         left join channels c on c.id = v.channel_id
+         join channels c on c.id = v.channel_id
          where v.status = 'downloaded'
+           and c.active = 1
            and v.local_path is not null
            and v.exported_at is not null
          order by coalesce(v.exported_at, v.downloaded_at, v.last_seen_at) desc, v.id desc

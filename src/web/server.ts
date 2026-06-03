@@ -62,6 +62,7 @@ function createLivePayload(
   deviceSyncService: DeviceSyncService,
   override?: Partial<Pick<LiveActivityDto, "deviceStatus" | "deviceReadyForExport" | "safeToDisconnect">>
 ): LiveActivityDto {
+  db.reconcileChannelSources(loadChannelSources());
   const deviceStatus = deviceSyncService.getStatus();
   const state = syncService.getState();
   const latestDeviceSync = db.getLatestDeviceSync();
