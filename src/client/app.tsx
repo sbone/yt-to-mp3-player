@@ -11,6 +11,7 @@ import {
   getRunDetail,
   getRuns,
   openLiveEvents,
+  removeSource,
   retryCookieErrors,
   startChannelSync,
   startPlayerSync,
@@ -222,6 +223,13 @@ function AppProgram(): ReactElement {
             .then((result) => dispatch({ type: "ChannelsMsg", msg: { type: "SourceAdded", result } }))
             .catch((error) =>
               dispatch({ type: "ChannelsMsg", msg: { type: "SourceAddFailed", error: commandFailureMessage(error) } })
+            );
+          break;
+        case "RemoveSource":
+          void removeSource(cmd.key)
+            .then((result) => dispatch({ type: "ChannelsMsg", msg: { type: "SourceRemoved", result } }))
+            .catch((error) =>
+              dispatch({ type: "ChannelsMsg", msg: { type: "SourceRemoveFailed", error: commandFailureMessage(error) } })
             );
           break;
         case "FetchChannelDetail":

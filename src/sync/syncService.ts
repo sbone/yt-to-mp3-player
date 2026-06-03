@@ -221,6 +221,7 @@ export class SyncService {
 
   private async syncAll(): Promise<void> {
     const sources = loadChannelSources();
+    this.db.reconcileChannelSources(sources);
     const channels = sources.map((source) => this.db.upsertChannel(source.key, source.url));
     const runId = this.db.createRun("all", null);
 

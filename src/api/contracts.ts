@@ -151,6 +151,11 @@ export interface AddSourceResponse {
   message: string;
 }
 
+export interface RemoveSourceResponse {
+  source: SourceDto;
+  message: string;
+}
+
 export interface ChannelDetailDto {
   channel: ChannelRecord;
   videos: VideoRecord[];

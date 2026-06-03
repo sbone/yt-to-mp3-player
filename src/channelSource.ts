@@ -100,6 +100,22 @@ export function addChannelSource(raw: string): ChannelSourceEntry {
   return source;
 }
 
+export function removeChannelSource(key: string): ChannelSourceEntry {
+  const sourceKey = key.trim();
+  if (!sourceKey) {
+    throw new Error("Choose a source to remove.");
+  }
+
+  const existing = loadChannelSources();
+  const source = existing.find((entry) => entry.key === sourceKey);
+  if (!source) {
+    throw new Error("Source is not tracked.");
+  }
+
+  saveChannelSources(existing.filter((entry) => entry.key !== sourceKey));
+  return source;
+}
+
 export function channelUrlForHandle(handle: string): string {
   return `https://www.youtube.com/@${encodeURIComponent(handle)}/videos`;
 }

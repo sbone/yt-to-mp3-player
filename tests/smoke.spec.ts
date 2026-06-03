@@ -88,6 +88,25 @@ test.describe("dev SPA smoke", () => {
     expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
   });
 
+  test("reviewer can remove a source in demo mode", async ({ page }) => {
+    const consoleErrors = collectConsoleErrors(page);
+
+    await page.goto("/channels");
+    await page.getByLabel("Source handle or URL").fill("@demo-remove-source");
+    await page.getByRole("button", { name: "Add Source" }).click();
+    await expect(page.getByRole("link", { name: "@demo-remove-source", exact: true })).toBeVisible();
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await page
+      .getByRole("row", { name: /@demo-remove-source/ })
+      .getByRole("button", { name: "Remove" })
+      .click();
+
+    await expect(page.getByText("Source removed: demo-remove-source")).toBeVisible();
+    await expect(page.getByRole("link", { name: "@demo-remove-source", exact: true })).toHaveCount(0);
+    expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
+  });
+
   test("demo refresh creates downloaded items without external tools", async ({ page, request }) => {
     const consoleErrors = collectConsoleErrors(page);
 

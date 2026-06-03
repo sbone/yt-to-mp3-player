@@ -5,6 +5,7 @@ import type {
   ChannelsDto,
   DashboardDto,
   LiveActivityDto,
+  RemoveSourceResponse,
   RunDetailDto,
   RunsDto,
   SyncAndExportActionResponse
@@ -63,6 +64,12 @@ export function addSource(source: string): Promise<AddSourceResponse> {
   return requestJson("/api/sources", {
     method: "POST",
     body: JSON.stringify({ source })
+  });
+}
+
+export function removeSource(key: string): Promise<RemoveSourceResponse> {
+  return requestJson(`/api/sources/${encodeURIComponent(key)}`, {
+    method: "DELETE"
   });
 }
 

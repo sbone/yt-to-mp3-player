@@ -57,7 +57,7 @@ npm run start
 
 ## Workflow
 
-- Add sources from the UI or edit `channels.txt`.
+- Add or remove sources from the UI, or edit `channels.txt`.
 - `Refresh Library` discovers new media and downloads audio.
 - `Sync Player` copies downloaded files to the mounted player.
 - `Refresh Library + Sync Player` runs both.
@@ -65,6 +65,7 @@ npm run start
 - Missing exported files are re-queued so the next sync can restore them.
 - Cookie/auth failures are tracked separately for recovery.
 - Source list entries can be a channel handle, `@handle`, channel URL, or playlist URL.
+- Removing a source marks its SQLite channel row inactive so discovered videos and run history are preserved.
 
 ## Constraints
 

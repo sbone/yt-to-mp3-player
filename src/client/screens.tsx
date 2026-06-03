@@ -7,6 +7,7 @@ import type {
   ChannelsDto,
   DashboardDto,
   LiveActivityDto,
+  RemoveSourceResponse,
   RunDetailDto,
   RunsDto,
   SyncAndExportActionResponse,
@@ -22,6 +23,7 @@ export type Cmd =
   | { type: "FetchDashboard" }
   | { type: "FetchChannels" }
   | { type: "AddSource"; source: string }
+  | { type: "RemoveSource"; key: string }
   | { type: "FetchChannelDetail"; handle: string }
   | { type: "FetchRuns" }
   | { type: "FetchRunDetail"; runId: number }
@@ -86,6 +88,8 @@ export interface ChannelsModel {
   data: RemoteData<ChannelsDto>;
   sourceInput: string;
   addSourceAction: ActionState;
+  removeSourceAction: ActionState;
+  removingSourceKey: string | null;
 }
 
 export type ChannelsMsg =
@@ -95,7 +99,10 @@ export type ChannelsMsg =
   | { type: "SourceInputChanged"; value: string }
   | { type: "SourceAddRequested" }
   | { type: "SourceAdded"; result: AddSourceResponse }
-  | { type: "SourceAddFailed"; error: string };
+  | { type: "SourceAddFailed"; error: string }
+  | { type: "SourceRemoveRequested"; key: string }
+  | { type: "SourceRemoved"; result: RemoveSourceResponse }
+  | { type: "SourceRemoveFailed"; error: string };
 
 export interface ChannelDetailModel {
   handle: string | null;
@@ -332,7 +339,9 @@ export function initChannelsModel(): ChannelsModel {
   return {
     data: { status: "idle", data: null, error: null },
     sourceInput: "",
-    addSourceAction: idleAction()
+    addSourceAction: idleAction(),
+    removeSourceAction: idleAction(),
+    removingSourceKey: null
   };
 }
 
@@ -360,6 +369,18 @@ export function updateChannelsModel(model: ChannelsModel, msg: ChannelsMsg): [Ch
       ];
     case "SourceAddFailed":
       return [{ ...model, addSourceAction: failureAction(msg.error) }, []];
+    case "SourceRemoveRequested":
+      return [
+        { ...model, removeSourceAction: workingAction(), removingSourceKey: msg.key },
+        [{ type: "RemoveSource", key: msg.key }]
+      ];
+    case "SourceRemoved":
+      return [
+        { ...model, removeSourceAction: successAction(msg.result.message), removingSourceKey: null },
+        [{ type: "FetchChannels" }]
+      ];
+    case "SourceRemoveFailed":
+      return [{ ...model, removeSourceAction: failureAction(msg.error), removingSourceKey: null }, []];
   }
 }
 
@@ -1083,6 +1104,7 @@ export function renderChannelsScreen(
           </button>
         </form>
         {renderActionState(model.addSourceAction)}
+        {renderActionState(model.removeSourceAction)}
         <div className="stat-grid stat-grid-compact">
           {statBlock("Sources", channelCount)}
           {statBlock("Local Only", localOnlyCount)}
@@ -1107,25 +1129,43 @@ export function renderChannelsScreen(
               <th>Needs Sync</th>
               <th>Cookie blocked</th>
               <th>Last success</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {payload?.channels.map((channel) => (
-              <tr key={channel.id}>
-                <td>
-                  <Link to={`/channels/${encodeURIComponent(channel.handle)}`}>{sensitiveText(channelLabel(channel.handle), obfuscateSensitive)}</Link>
-                </td>
-                <td>
-                  <a href={channel.url}>{sensitiveText(channel.url, obfuscateSensitive)}</a>
-                </td>
-                <td>{channel.known_videos}</td>
-                <td>{channel.on_player_videos}</td>
-                <td>{channel.local_only_videos}</td>
-                <td>{channel.needs_sync_videos}</td>
-                <td>{channel.cookie_blocked_videos}</td>
-                <td>{fmtDate(channel.last_success_at)}</td>
-              </tr>
-            ))}
+            {payload?.channels.map((channel) => {
+              const isRemoving = model.removeSourceAction.status === "working" && model.removingSourceKey === channel.handle;
+              return (
+                <tr key={channel.id}>
+                  <td>
+                    <Link to={`/channels/${encodeURIComponent(channel.handle)}`}>{sensitiveText(channelLabel(channel.handle), obfuscateSensitive)}</Link>
+                  </td>
+                  <td>
+                    <a href={channel.url}>{sensitiveText(channel.url, obfuscateSensitive)}</a>
+                  </td>
+                  <td>{channel.known_videos}</td>
+                  <td>{channel.on_player_videos}</td>
+                  <td>{channel.local_only_videos}</td>
+                  <td>{channel.needs_sync_videos}</td>
+                  <td>{channel.cookie_blocked_videos}</td>
+                  <td>{fmtDate(channel.last_success_at)}</td>
+                  <td>
+                    <button
+                      type="button"
+                      {...{ "box-": "round", "variant-": "danger" }}
+                      disabled={model.removeSourceAction.status === "working"}
+                      onClick={() => {
+                        if (window.confirm(`Remove ${channelLabel(channel.handle)} from tracked sources?`)) {
+                          dispatch({ type: "SourceRemoveRequested", key: channel.handle });
+                        }
+                      }}
+                    >
+                      {renderButtonLabel("Remove", "Removing...", isRemoving)}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </section>

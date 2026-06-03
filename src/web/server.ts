@@ -8,12 +8,13 @@ import type {
   ChannelsDto,
   DashboardDto,
   LiveActivityDto,
+  RemoveSourceResponse,
   RunDetailDto,
   RunsDto,
   SourcesDto,
   SyncAndExportActionResponse
 } from "../api/contracts.js";
-import { addChannelSource, loadChannelSources } from "../channelSource.js";
+import { addChannelSource, loadChannelSources, removeChannelSource } from "../channelSource.js";
 import { config } from "../config.js";
 import { AppDb } from "../db.js";
 import { DeviceSyncService } from "../deviceSync.js";
@@ -26,6 +27,7 @@ function createDashboardPayload(
   syncService: SyncService,
   deviceSyncService: DeviceSyncService
 ): DashboardDto {
+  db.reconcileChannelSources(loadChannelSources());
   const channels = db.listChannelsOverview();
   const runs = db.listRecentRuns(10);
   const cookieBlocked = db.listCookieBlockedVideos(50);
@@ -139,9 +141,11 @@ export function createServer(
   });
 
   app.get("/api/channels", (_req, res) => {
+    const sources = loadChannelSources();
+    db.reconcileChannelSources(sources);
     const payload: ChannelsDto = {
       channels: db.listChannelsOverview(),
-      sources: loadChannelSources()
+      sources
     };
     res.json(payload);
   });
@@ -165,6 +169,21 @@ export function createServer(
       res.status(201).json(payload);
     } catch (error) {
       res.status(400).json({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.delete("/api/sources/:key", (req, res) => {
+    const key = req.params.key;
+    try {
+      const source = removeChannelSource(key);
+      db.deactivateChannel(source.key);
+      const payload: RemoveSourceResponse = {
+        source,
+        message: `Source removed: ${source.key}`
+      };
+      res.json(payload);
+    } catch (error) {
+      res.status(404).json({ message: error instanceof Error ? error.message : String(error) });
     }
   });
 
