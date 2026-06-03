@@ -5,10 +5,12 @@ import { channelUrlForHandle, loadChannelSources } from "../channelSource.js";
 import { Logger } from "../logger.js";
 import { existsSync, statSync } from "node:fs";
 import type { ChannelRecord, SyncCounters } from "../types.js";
-import { downloadVideo, discoverChannel, isCookieAuthError, type DownloadProgress } from "./ytDlp.js";
+import type { DownloadProgress } from "./ytDlp.js";
 import { ExistingDownloadIndex } from "./fileIndex.js";
 import { config } from "../config.js";
 import type { PendingExportItem } from "../deviceSync.js";
+import { createMediaProvider, type MediaProvider } from "./mediaProvider.js";
+import { ensureDemoPendingExport } from "../demoSeed.js";
 
 export interface SyncState {
   library: LibrarySyncState;
@@ -135,7 +137,8 @@ export class SyncService {
   constructor(
     private readonly db: AppDb,
     private readonly logger: Logger,
-    private readonly deviceSyncService: DeviceSyncService
+    private readonly deviceSyncService: DeviceSyncService,
+    private readonly mediaProvider: MediaProvider = createMediaProvider()
   ) {}
 
   getState(): SyncState {
@@ -218,6 +221,7 @@ export class SyncService {
 
   private async syncAll(): Promise<void> {
     const sources = loadChannelSources();
+    this.db.reconcileChannelSources(sources);
     const channels = sources.map((source) => this.db.upsertChannel(source.key, source.url));
     const runId = this.db.createRun("all", null);
 
@@ -388,7 +392,7 @@ export class SyncService {
     try {
       for (const video of blockedVideos) {
         try {
-          const result = await downloadVideo(video.youtube_video_id);
+          const result = await this.mediaProvider.downloadAudio(video.youtube_video_id);
           if (result.status === "downloaded") {
             this.db.markVideoDownloaded(video.id, result.localPath, result.fileSize);
             this.db.addEvent(
@@ -406,7 +410,7 @@ export class SyncService {
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          if (isCookieAuthError(message)) {
+          if (this.mediaProvider.isAuthError(message)) {
             this.db.markVideoCookieBlocked(video.id, message);
             this.db.addEvent(
               runId,
@@ -572,6 +576,7 @@ export class SyncService {
   }
 
   private async exportPendingToDevice(runId: number, note: string | null = null): Promise<string> {
+    this.db.reconcileChannelSources(loadChannelSources());
     const device = this.deviceSyncService.getStatus();
     if (!device.connected || !device.mountPath) {
       const message = `device export skipped: ${device.reason ?? "device not connected"}`;
@@ -599,6 +604,7 @@ export class SyncService {
       this.logger.warn(`run=${runId} re-queued exported tracks missing from device count=${missingExportedIds.length}`);
     }
 
+    ensureDemoPendingExport(this.db);
     const pendingBefore = this.db.listPendingExportVideos(5000);
     const reconciliation = reconcilePendingAgainstDevice(pendingBefore, device.mountPath);
     const reconciledIds = [
@@ -744,7 +750,7 @@ export class SyncService {
     this.logger.info(`run=${runId} channel=${channel.handle} checking`);
 
     try {
-      const discovered = await discoverChannel(channel.url);
+      const discovered = await this.mediaProvider.discoverSource(channel.url, channel.handle);
       this.db.addEvent(
         runId,
         "info",
@@ -805,7 +811,7 @@ export class SyncService {
             currentItemSpeed: null,
             currentItemEta: null
           });
-          const result = await downloadVideo(item.youtubeVideoId, (progress: DownloadProgress) => {
+          const result = await this.mediaProvider.downloadAudio(item.youtubeVideoId, (progress: DownloadProgress) => {
             this.setLibraryState({
               currentItemTitle: item.title,
               currentItemPercent: progress.percent,
@@ -834,7 +840,7 @@ export class SyncService {
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          if (isCookieAuthError(message)) {
+          if (this.mediaProvider.isAuthError(message)) {
             this.db.markVideoCookieBlocked(upsert.id, message);
             this.db.addEvent(
               runId,
@@ -890,10 +896,10 @@ export class SyncService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.db.touchChannelChecked(channel.id, false);
-      const eventType = isCookieAuthError(message) ? "channel-cookie-blocked" : "channel-error";
-      const level = isCookieAuthError(message) ? "warn" : "error";
+      const eventType = this.mediaProvider.isAuthError(message) ? "channel-cookie-blocked" : "channel-error";
+      const level = this.mediaProvider.isAuthError(message) ? "warn" : "error";
       this.db.addEvent(runId, level, eventType, message, channel.id);
-      if (isCookieAuthError(message)) {
+      if (this.mediaProvider.isAuthError(message)) {
         this.logger.warn(`run=${runId} channel=${channel.handle} discovery cookie-blocked error=${message}`);
       } else {
         this.logger.error(`run=${runId} channel=${channel.handle} discovery failed error=${message}`);

@@ -1,102 +1,118 @@
-# yt-to-audio sync app
+# Local Audio Device Sync
 
-Local TypeScript app with an Express API and React SPA. It tracks YouTube channels and playlists with `yt-dlp`, downloads new videos as MP3s, and syncs them to a basic USB MP3 player.
+A local-first TypeScript app for managing audio sources and syncing downloaded audio to a basic USB MP3 player. The project focuses on a real filesystem-heavy workflow: clear operational state, safe device copying, interrupted-job recovery, and a UI that makes local sync understandable.
+
+This app can use `yt-dlp` and `ffmpeg` with user-provided media URLs. Use it only for media you have the right to access, download, and transfer for personal use.
 
 ## Screenshot
 
 <img width="2880" height="1750" alt="updated ui" src="https://github.com/user-attachments/assets/b31d91ec-adf8-42a3-bde3-1d41794d73db" />
 
-## Requirements
+## Problem
+
+Low-cost dedicated MP3 players are useful for offline listening, but their sync workflow is brittle: users need to track sources, download audio, copy files onto a mounted device, recover after interrupted copies, and understand whether the player is safe to disconnect.
+
+This project explores that workflow as local-first software instead of a cloud queue or fake CRUD app.
+
+## Demo Quickstart
+
+Demo mode is safe for reviewers. It uses fake sources, fake downloaded MP3 placeholder files, and a fake mounted player under `data/demo/`.
+
+```bash
+npm ci
+npm run demo
+```
+
+Open `http://127.0.0.1:3000`.
+
+In demo mode:
+
+- `yt-dlp` and `ffmpeg` are not called.
+- Real user data and real mounted devices are not used.
+- The fake DB is `data/demo/app.db`.
+- Fake downloads are written to `data/demo/downloads`.
+- The fake player is `data/demo/player`.
+
+## Normal Setup
+
+```bash
+npm ci
+npm run dev
+```
+
+Requirements for normal mode:
 
 - Node.js 22.x
 - `yt-dlp` in `PATH`
 - `ffmpeg` in `PATH`
 
-## Setup
+Useful commands:
 
 ```bash
-/opt/homebrew/bin/asdf exec npm ci
-./scripts/dev.sh
+npm run check
+npm test
+npm run build
+npm run start
 ```
 
-Open `http://127.0.0.1:3000`.
+## Workflow
 
-`./scripts/dev.sh` starts:
-- the backend on `3000`
-- the Vite client on `5173`
+- Add or remove sources from the UI, or edit `channels.txt`.
+- `Refresh Library` discovers new media and downloads audio.
+- `Sync Player` copies downloaded files to the mounted player.
+- `Refresh Library + Sync Player` runs both.
+- Existing matching files already on the player are reconciled as exported.
+- Missing exported files are re-queued so the next sync can restore them.
+- Cookie/auth failures are tracked separately for recovery.
+- Source list entries can be a channel handle, `@handle`, channel URL, or playlist URL.
+- Removing a source marks its SQLite channel row inactive so discovered videos and run history are preserved.
 
-Run them separately if needed:
+## Constraints
 
-```bash
-npm run dev:server
-npm run dev:client
-```
+- Local-first: SQLite and filesystem state are the source of truth.
+- Device-aware: copying happens only when the mounted player is detected and writable.
+- Recovery-oriented: interrupted runs and missing device files are surfaced instead of hidden.
+- Demo-safe: portfolio reviewers can exercise the product without external binaries or real media.
 
-## Quick checks
+## Screenshots
 
-```bash
-./scripts/doctor.sh
-./scripts/check.sh
-./scripts/reconcile-device.sh
-```
+Screenshot placeholders for a portfolio case study:
 
-## Content sources
+- Empty state: `docs/screenshots/01-empty-state.png`
+- Source management: `docs/screenshots/02-source-management.png`
+- Refresh progress: `docs/screenshots/03-refresh-progress.png`
+- Sync-to-device flow: `docs/screenshots/04-player-sync.png`
+- Error/recovery state: `docs/screenshots/05-recovery-state.png`
+- Device not mounted: `docs/screenshots/06-device-not-mounted.png`
 
-- Sources come from `channels.txt`.
-- Each line can be:
-  - a channel handle (case-insensitive)
-  - an `@handle`
-  - a channel URL
-  - a playlist URL
+The app includes a `Screenshot` toggle to redact sensitive source names and paths before capturing real screenshots.
 
-## Main workflow
+## Architecture
 
-- `Refresh Library` checks tracked sources and downloads new items.
-- `Sync Player` copies downloaded MP3s to the mounted player.
-- `Refresh Library + Sync Player` does both.
-- Existing files already on the player are treated as exported.
-- If files were manually deleted from the player, the next player sync re-queues and recopies them.
-- Cookie/auth failures are tracked as `cookie_blocked`. Use `Cookie/Auth Recovery` after fixing auth.
+- React SPA renders dashboard, source ledger, run ledger, and recovery states.
+- Express serves the API, SPA shell, live SSE updates, and sync actions.
+- SQLite stores sources, discovered videos, sync runs, events, and export state.
+- A media provider boundary swaps real `yt-dlp` behavior for deterministic demo behavior.
+- Device sync works against a filesystem boundary, so the same reconciliation path supports real and demo devices.
 
-## Device sync notes
+See [docs/architecture.md](docs/architecture.md) for a deeper walkthrough.
 
-- By default the app looks for a mounted volume named `AGP-A02T`.
-- Override with `DEVICE_VOLUME_NAME=YourVolumeName`.
-- Or bypass detection with `DEVICE_MOUNT_PATH=/Volumes/YourVolumeName`.
-- The app preserves source folders on-device. Example:
-  - `downloads/Wiztale/...`
-  - `/Volumes/<device>/Wiztale/...`
-- `./scripts/reconcile-device.sh` reports pending tracks already present on the player.
-- `./scripts/reconcile-device.sh --apply` marks high-confidence matches as exported without copying or deleting files.
+## Reliability Decisions
 
-## State and files
+- Sync runs are persisted and reconciled on startup if the server stops mid-run.
+- Device export writes to `.part` files and renames only after size verification.
+- Existing player files are detected before copying to avoid duplicate transfers.
+- Deleted player files clear their exported state and become pending again.
+- Live progress is streamed over SSE so the UI reflects long-running work without refreshes.
 
-- App DB: `data/app.db`
-- Download archive: `data/archive.txt`
-- Logs: `data/logs/app.log`
-- Downloads: `downloads/`
+## AI/Codex Collaboration
 
-On startup, any interrupted sync runs still marked `running` are reconciled to failed.
+Codex helped turn an existing personal utility into a portfolio-ready product by adding demo mode, tightening the reviewer workflow, expanding Playwright coverage, and reframing docs around local-first device sync. I reviewed the architecture, product framing, operational states, and implementation tradeoffs.
 
-## Production build
+## Future Improvements
 
-```bash
-./scripts/build.sh
-./scripts/start.sh
-```
-
-This builds the backend into `dist/` and the client into `dist/public`.
-
-## Runtime note
-
-- `.tool-versions` pins `nodejs 22.14.0`.
-- On this Mac, mismatched Node versions can break the native `better-sqlite3` binding.
-- If that happens after reinstalling dependencies, run `./scripts/rebuild-native.sh`.
-
-## Tailscale
-
-Keep the app bound to localhost, then expose it with:
-
-```bash
-tailscale serve localhost:3000
-```
+- Add import/export for source lists.
+- Add a read-only preview of pending copy manifests.
+- Capture and commit portfolio screenshots/GIFs.
+- Add more granular retry controls per failed item.
+- Package a single-command desktop build for non-technical users.

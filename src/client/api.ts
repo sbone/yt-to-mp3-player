@@ -1,9 +1,11 @@
 import type {
   ActionResponse,
+  AddSourceResponse,
   ChannelDetailDto,
   ChannelsDto,
   DashboardDto,
   LiveActivityDto,
+  RemoveSourceResponse,
   RunDetailDto,
   RunsDto,
   SyncAndExportActionResponse
@@ -56,6 +58,19 @@ export function getDashboard(): Promise<DashboardDto> {
 
 export function getChannels(): Promise<ChannelsDto> {
   return requestJson("/api/channels");
+}
+
+export function addSource(source: string): Promise<AddSourceResponse> {
+  return requestJson("/api/sources", {
+    method: "POST",
+    body: JSON.stringify({ source })
+  });
+}
+
+export function removeSource(key: string): Promise<RemoveSourceResponse> {
+  return requestJson(`/api/sources/${encodeURIComponent(key)}`, {
+    method: "DELETE"
+  });
 }
 
 export function getChannelDetail(handle: string): Promise<ChannelDetailDto> {

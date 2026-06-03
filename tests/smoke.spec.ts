@@ -17,7 +17,8 @@ test.describe("dev SPA smoke", () => {
     const consoleErrors = collectConsoleErrors(page);
 
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Channel Sync Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Local Audio Device Sync" })).toBeVisible();
+    await expect(page.getByText("Demo Mode: no real downloads or devices used.")).toBeVisible();
     await expect(page.getByText("Live Activity")).toBeVisible();
     expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
   });
@@ -28,21 +29,27 @@ test.describe("dev SPA smoke", () => {
     await page.goto("/");
     await expect(page.getByText("Device status:")).toBeVisible();
 
-    await request.post("/api/debug/live", {
-      data: {
-        deviceStatus: {
-          connected: true,
-          writable: true,
-          volumeName: "TEST-PLAYER",
-          mountPath: "/Volumes/TEST-PLAYER",
-          reason: null
+    await expect
+      .poll(
+        async () => {
+          await request.post("/api/debug/live", {
+            data: {
+              deviceStatus: {
+                connected: true,
+                writable: true,
+                volumeName: "TEST-PLAYER",
+                mountPath: "/Volumes/TEST-PLAYER",
+                reason: null
+              },
+              deviceReadyForExport: true,
+              safeToDisconnect: true
+            }
+          });
+          return page.getByText("connected (TEST-PLAYER)").isVisible();
         },
-        deviceReadyForExport: true,
-        safeToDisconnect: true
-      }
-    });
-
-    await expect(page.getByText("connected (TEST-PLAYER)")).toBeVisible();
+        { timeout: 10_000 }
+      )
+      .toBeTruthy();
     expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
   });
 
@@ -50,7 +57,7 @@ test.describe("dev SPA smoke", () => {
     const consoleErrors = collectConsoleErrors(page);
 
     await page.goto("/channels");
-    await expect(page.getByRole("heading", { name: "Tracked Channels" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Tracked Sources" })).toBeVisible();
 
     await page.goto("/runs");
     await expect(page.getByRole("heading", { name: "Sync Runs" })).toBeVisible();
@@ -66,6 +73,128 @@ test.describe("dev SPA smoke", () => {
       await expect(page.getByRole("button", { name: "Sync This Channel" })).toBeVisible();
     }
 
+    expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
+  });
+
+  test("reviewer can add a source in demo mode", async ({ page }) => {
+    const consoleErrors = collectConsoleErrors(page);
+
+    await page.goto("/channels");
+    await page.getByLabel("Source handle or URL").fill("@demo-new-source");
+    await page.getByRole("button", { name: "Add Source" }).click();
+
+    await expect(page.getByText("Source added: demo-new-source")).toBeVisible();
+    await expect(page.getByRole("link", { name: "@demo-new-source", exact: true })).toBeVisible();
+    expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
+  });
+
+  test("reviewer can remove a source in demo mode", async ({ page }) => {
+    const consoleErrors = collectConsoleErrors(page);
+
+    await page.goto("/channels");
+    await page.getByLabel("Source handle or URL").fill("@demo-remove-source");
+    await page.getByRole("button", { name: "Add Source" }).click();
+    await expect(page.getByRole("link", { name: "@demo-remove-source", exact: true })).toBeVisible();
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await page
+      .getByRole("row", { name: /@demo-remove-source/ })
+      .getByRole("button", { name: "Remove" })
+      .click();
+
+    await expect(page.getByText("Source removed: demo-remove-source")).toBeVisible();
+    await expect(page.getByRole("link", { name: "@demo-remove-source", exact: true })).toHaveCount(0);
+    expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
+  });
+
+  test("demo refresh creates downloaded items without external tools", async ({ page, request }) => {
+    const consoleErrors = collectConsoleErrors(page);
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Refresh Library", exact: true }).click();
+
+    await expect
+      .poll(
+        async () => {
+        const response = await request.get("/api/dashboard");
+        const dashboard = (await response.json()) as {
+          channels: Array<{ handle: string; downloaded_videos: number }>;
+          syncState: { library: { running: boolean } };
+        };
+        const downloaded = dashboard.channels.reduce((sum, channel) => sum + channel.downloaded_videos, 0);
+        return !dashboard.syncState.library.running && downloaded > 1;
+        },
+        { timeout: 20_000 }
+      )
+      .toBeTruthy();
+    expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
+  });
+
+  test("demo sync exports queued files to fake player", async ({ page, request }) => {
+    const consoleErrors = collectConsoleErrors(page);
+
+    await request.post("/api/sync");
+    await expect
+      .poll(
+        async () => {
+        const response = await request.get("/api/live");
+        const live = (await response.json()) as {
+          state: { library: { running: boolean } };
+          pendingExport: unknown[];
+        };
+        return live.state.library.running ? -1 : live.pendingExport.length;
+        },
+        { timeout: 20_000 }
+      )
+      .toBeGreaterThan(0);
+
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Sync Player", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Sync Player", exact: true }).click();
+
+    await expect
+      .poll(
+        async () => {
+        const response = await request.get("/api/live");
+        const live = (await response.json()) as {
+          state: { player: { running: boolean; lastSummary: string | null } };
+          pendingExport: unknown[];
+        };
+        return {
+          running: live.state.player.running,
+          pending: live.pendingExport.length,
+          summary: live.state.player.lastSummary
+        };
+        },
+        { timeout: 20_000 }
+      )
+      .toEqual(expect.objectContaining({ running: false, pending: 0 }));
+
+    await expect(page.locator(".sync-notification-summary").getByText(/Synced \d+ tracks? to player/)).toBeVisible();
+    expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
+  });
+
+  test("device-not-mounted recovery state is visible", async ({ page, request }) => {
+    const consoleErrors = collectConsoleErrors(page);
+
+    await page.goto("/");
+    await request.post("/api/debug/live", {
+      data: {
+        deviceStatus: {
+          connected: false,
+          writable: false,
+          volumeName: "DEMO-PLAYER",
+          mountPath: null,
+          reason: "Demo player is not mounted"
+        },
+        deviceReadyForExport: false,
+        safeToDisconnect: false
+      }
+    });
+
+    await expect(page.getByText("not connected")).toBeVisible();
+    await expect(page.getByText("Detection note: Demo player is not mounted")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sync Player", exact: true })).toBeDisabled();
     expect(consoleErrors, consoleErrors.join("\n")).toEqual([]);
   });
 

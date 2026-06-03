@@ -124,6 +124,7 @@ export class AppDb {
          values (@handle, @url, 1, @now, @now)
          on conflict(handle) do update set
            url=excluded.url,
+           active=1,
            updated_at=excluded.updated_at`
       )
       .run({ handle, url, now });
@@ -131,6 +132,58 @@ export class AppDb {
     return this.db
       .prepare("select * from channels where handle = ?")
       .get(handle) as ChannelRecord;
+  }
+
+  reconcileChannelSources(sources: Array<{ key: string; url: string }>): void {
+    const now = new Date().toISOString();
+    const upsertChannel = this.db.prepare(
+      `insert into channels (handle, url, active, created_at, updated_at)
+       values (@handle, @url, 1, @now, @now)
+       on conflict(handle) do update set
+         url=excluded.url,
+         active=1,
+         updated_at=excluded.updated_at
+       where channels.url <> excluded.url or channels.active <> 1`
+    );
+    const deactivateAll = this.db.prepare(
+      `update channels
+       set active = 0, updated_at = ?
+       where active = 1`
+    );
+    const deactivateMissing =
+      sources.length === 0
+        ? null
+        : this.db.prepare(
+            `update channels
+             set active = 0, updated_at = ?
+             where active = 1 and handle not in (${sources.map(() => "?").join(", ")})`
+          );
+
+    const tx = this.db.transaction(() => {
+      for (const source of sources) {
+        upsertChannel.run({ handle: source.key, url: source.url, now });
+      }
+
+      if (sources.length === 0) {
+        deactivateAll.run(now);
+        return;
+      }
+
+      deactivateMissing?.run(now, ...sources.map((source) => source.key));
+    });
+
+    tx();
+  }
+
+  deactivateChannel(handle: string): boolean {
+    const result = this.db
+      .prepare(
+        `update channels
+         set active = 0, updated_at = ?
+         where handle = ? and active = 1`
+      )
+      .run(new Date().toISOString(), handle);
+    return result.changes > 0;
   }
 
   touchChannelChecked(channelId: number, ok: boolean): void {
@@ -419,7 +472,7 @@ export class AppDb {
   }
 
   getChannel(handle: string): ChannelRecord | null {
-    return (this.db.prepare("select * from channels where handle = ?").get(handle) as ChannelRecord | undefined) ?? null;
+    return (this.db.prepare("select * from channels where handle = ? and active = 1").get(handle) as ChannelRecord | undefined) ?? null;
   }
 
   listRecentRuns(limit = 25): RunSummary[] {
@@ -537,8 +590,9 @@ export class AppDb {
           v.downloaded_at,
           c.handle as channel_handle
          from videos v
-         left join channels c on c.id = v.channel_id
+         join channels c on c.id = v.channel_id
          where v.status = 'downloaded'
+           and c.active = 1
            and v.local_path is not null
            and v.exported_at is null
          order by coalesce(v.downloaded_at, v.last_seen_at) desc, v.id desc
@@ -569,8 +623,9 @@ export class AppDb {
           v.downloaded_at,
           c.handle as channel_handle
          from videos v
-         left join channels c on c.id = v.channel_id
+         join channels c on c.id = v.channel_id
          where v.status = 'downloaded'
+           and c.active = 1
            and v.local_path is not null
            and v.exported_at is not null
          order by coalesce(v.exported_at, v.downloaded_at, v.last_seen_at) desc, v.id desc

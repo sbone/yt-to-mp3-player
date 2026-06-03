@@ -1,0 +1,158 @@
+name: Screenshot Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+
+      - name: Generate portfolio screenshots
+        run: npm run screenshots
+
+      - name: Build screenshot gallery
+        run: |
+          mkdir -p artifacts/pages/screenshots
+          cp artifacts/screenshots/*.png artifacts/pages/screenshots/
+          cat > artifacts/pages/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <title>Local Audio Device Sync Screenshots</title>
+              <style>
+                :root {
+                  color-scheme: dark;
+                  --bg: #07110c;
+                  --panel: #102019;
+                  --text: #efffe8;
+                  --muted: #a8cfb0;
+                  --line: #7fd995;
+                }
+                body {
+                  margin: 0;
+                  background:
+                    radial-gradient(circle at top left, rgb(127 217 149 / 0.16), transparent 28rem),
+                    linear-gradient(180deg, #09140e 0%, var(--bg) 100%);
+                  color: var(--text);
+                  font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                }
+                main {
+                  width: min(1180px, calc(100% - 2rem));
+                  margin: 0 auto;
+                  padding: 2rem 0 3rem;
+                }
+                h1 {
+                  margin: 0 0 0.5rem;
+                  text-transform: uppercase;
+                  letter-spacing: 0.08em;
+                }
+                p {
+                  color: var(--muted);
+                  margin: 0 0 1.25rem;
+                }
+                .grid {
+                  display: grid;
+                  gap: 1.25rem;
+                }
+                figure {
+                  margin: 0;
+                  padding: 1rem;
+                  background: rgb(16 32 25 / 0.82);
+                  border: 1px solid rgb(127 217 149 / 0.32);
+                  border-radius: 16px;
+                }
+                figcaption {
+                  margin-bottom: 0.75rem;
+                  color: var(--text);
+                  text-transform: uppercase;
+                  letter-spacing: 0.06em;
+                  font-weight: 700;
+                }
+                img {
+                  display: block;
+                  width: 100%;
+                  height: auto;
+                  border-radius: 10px;
+                  border: 1px solid rgb(127 217 149 / 0.22);
+                }
+              </style>
+            </head>
+            <body>
+              <main>
+                <h1>Local Audio Device Sync Screenshots</h1>
+                <p>Generated automatically from demo mode in GitHub Actions.</p>
+                <section class="grid">
+                  <figure>
+                    <figcaption>Dashboard Empty State</figcaption>
+                    <img src="screenshots/01-dashboard-empty-state.png" alt="Dashboard empty state" />
+                  </figure>
+                  <figure>
+                    <figcaption>Source Management</figcaption>
+                    <img src="screenshots/02-source-management.png" alt="Source management screen" />
+                  </figure>
+                  <figure>
+                    <figcaption>Refresh Progress</figcaption>
+                    <img src="screenshots/03-refresh-progress.png" alt="Refresh progress state" />
+                  </figure>
+                  <figure>
+                    <figcaption>Player Sync</figcaption>
+                    <img src="screenshots/04-player-sync.png" alt="Player sync progress state" />
+                  </figure>
+                  <figure>
+                    <figcaption>Recovery State</figcaption>
+                    <img src="screenshots/05-recovery-state.png" alt="Recovery state" />
+                  </figure>
+                  <figure>
+                    <figcaption>Device Not Mounted</figcaption>
+                    <img src="screenshots/06-device-not-mounted.png" alt="Device not mounted state" />
+                  </figure>
+                </section>
+              </main>
+            </body>
+          </html>
+          HTML
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: artifacts/pages
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
