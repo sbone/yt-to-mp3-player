@@ -626,7 +626,6 @@ export class AppDb {
          join channels c on c.id = v.channel_id
          where v.status = 'downloaded'
            and c.active = 1
-           and v.local_path is not null
            and v.exported_at is not null
          order by coalesce(v.exported_at, v.downloaded_at, v.last_seen_at) desc, v.id desc
          limit ?`
@@ -678,6 +677,33 @@ export class AppDb {
       `update videos
        set exported_at = null,
            exported_device_sync_id = null
+       where id = ?`
+    );
+
+    const tx = this.db.transaction(() => {
+      for (const videoId of videoIds) {
+        updateVideo.run(videoId);
+      }
+      return videoIds.length;
+    });
+
+    return tx();
+  }
+
+  markVideosForRedownload(videoIds: number[]): number {
+    if (videoIds.length === 0) {
+      return 0;
+    }
+
+    const updateVideo = this.db.prepare(
+      `update videos
+       set status = 'discovered',
+           local_path = null,
+           file_size_bytes = null,
+           downloaded_at = null,
+           exported_at = null,
+           exported_device_sync_id = null,
+           failure_message = null
        where id = ?`
     );
 

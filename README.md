@@ -63,6 +63,7 @@ npm run start
 - `Refresh Library + Sync Player` runs both.
 - Existing matching files already on the player are reconciled as exported.
 - Missing exported files are re-queued so the next sync can restore them.
+- Verified player exports remove the local cache copy; missing player files are downloaded again on the next library refresh.
 - Cookie/auth failures are tracked separately for recovery.
 - Source list entries can be a channel handle, `@handle`, channel URL, or playlist URL.
 - Removing a source marks its SQLite channel row inactive so discovered videos and run history are preserved.

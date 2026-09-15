@@ -3,7 +3,7 @@ import { DeviceSyncService } from "../deviceSync.js";
 import { reconcilePendingAgainstDevice } from "../deviceReconcile.js";
 import { channelUrlForHandle, loadChannelSources } from "../channelSource.js";
 import { Logger } from "../logger.js";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, unlinkSync } from "node:fs";
 import type { ChannelRecord, SyncCounters } from "../types.js";
 import type { DownloadProgress } from "./ytDlp.js";
 import { ExistingDownloadIndex } from "./fileIndex.js";
@@ -594,7 +594,7 @@ export class SyncService {
     const missingExportedIds = exportedReconciliation.unmatched.map((item) => item.item.id);
 
     if (missingExportedIds.length > 0) {
-      this.db.clearVideosExported(missingExportedIds);
+      this.db.markVideosForRedownload(missingExportedIds);
       this.db.addEvent(
         runId,
         "warn",
@@ -617,6 +617,18 @@ export class SyncService {
         reconciledIds,
         `auto reconciliation; exact=${reconciliation.exactMatches.length}, normalized=${reconciliation.normalizedMatches.length}, ambiguous=${reconciliation.ambiguous.length}, unmatched=${reconciliation.unmatched.length}`
       );
+      for (const item of reconciliation.exactMatches.map((match) => match.item)) {
+        if (!existsSync(item.local_path)) {
+          continue;
+        }
+        try {
+          unlinkSync(item.local_path);
+        } catch (error) {
+          this.logger.warn(
+            `run=${runId} could not remove local cache path=${item.local_path}: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
       this.db.addEvent(
         runId,
         "info",
@@ -702,6 +714,19 @@ export class SyncService {
         exportedIds,
         `${note?.trim() ? `${note.trim()}; ` : ""}auto copy; copied=${copyOutcome.copied.length}, existing=${copyOutcome.alreadyPresent.length}, missing=${copyOutcome.missingSource.length}, failed=${copyOutcome.failed.length}`
       );
+      for (const item of [...copyOutcome.copied, ...copyOutcome.alreadyPresent]) {
+        if (!existsSync(item.local_path)) {
+          continue;
+        }
+        try {
+          unlinkSync(item.local_path);
+          this.logger.info(`run=${runId} removed local cache path=${item.local_path}`);
+        } catch (error) {
+          this.logger.warn(
+            `run=${runId} could not remove local cache path=${item.local_path}: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
     }
 
     this.db.addEvent(

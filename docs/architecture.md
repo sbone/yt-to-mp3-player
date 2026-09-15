@@ -37,11 +37,13 @@ The database intentionally keeps the original `youtube_video_id` naming for comp
 - Demo mode points the same service at `data/demo/player`.
 - Copying writes `<target>.part`, verifies file size, then renames into place.
 - Existing matching files are treated as already exported.
+- Verified exports delete the local source copy; SQLite retains its path and export history.
 
 ## Recovery Behavior
 
 - Runs left as `running` are marked failed on startup with an interruption event.
-- Exported files missing from the player are re-queued by clearing `exported_at`.
+- Exported files missing from the player are reset for download.
+- Missing exported files are reset to `discovered` so the next library refresh can download them again.
 - Cookie/auth failures are tracked as `cookie_blocked` so they do not disappear into generic failures.
 - The dashboard exposes safe-to-disconnect, device-readiness, pending export, and recent events as first-class state.
 
