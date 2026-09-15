@@ -274,9 +274,12 @@ export class SyncService {
       this.pushNotification({
         id: `library:${runId}`,
         kind: "library",
-        title: "Library refresh complete",
+        title: totals.downloaded === 0 && totals.failed === 0 ? "Library is up to date" : "Library refresh complete",
         status,
-        summary: `Downloaded ${totals.downloaded} track${totals.downloaded === 1 ? "" : "s"} with ${totals.failed} error${totals.failed === 1 ? "" : "s"}.`,
+        summary:
+          totals.downloaded === 0 && totals.failed === 0
+            ? "No new tracks were found. The database matches the configured sources."
+            : `Downloaded ${totals.downloaded} track${totals.downloaded === 1 ? "" : "s"} with ${totals.failed} error${totals.failed === 1 ? "" : "s"}.`,
         details: [
           `Scope: all channels`,
           `Discovered: ${totals.discovered}`,
@@ -345,9 +348,15 @@ export class SyncService {
       this.pushNotification({
         id: `library:${runId}`,
         kind: "library",
-        title: `Channel refresh complete`,
+        title:
+          counters.downloaded === 0 && counters.failed === 0
+            ? `@${handle} is up to date`
+            : "Channel refresh complete",
         status,
-        summary: `Downloaded ${counters.downloaded} track${counters.downloaded === 1 ? "" : "s"} for @${handle} with ${counters.failed} error${counters.failed === 1 ? "" : "s"}.`,
+        summary:
+          counters.downloaded === 0 && counters.failed === 0
+            ? "No new tracks were found. The database matches this source."
+            : `Downloaded ${counters.downloaded} track${counters.downloaded === 1 ? "" : "s"} for @${handle} with ${counters.failed} error${counters.failed === 1 ? "" : "s"}.`,
         details: [
           `Scope: @${handle}`,
           `Discovered: ${counters.discovered}`,
