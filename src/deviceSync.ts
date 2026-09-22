@@ -14,22 +14,7 @@ import { basename, dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 import { config } from "./config.js";
-
-export interface PendingExportItem {
-  id: number;
-  title: string;
-  local_path: string;
-  downloaded_at: string | null;
-  channel_handle: string | null;
-}
-
-export interface DeviceStatus {
-  connected: boolean;
-  writable: boolean;
-  volumeName: string | null;
-  mountPath: string | null;
-  reason: string | null;
-}
+import type { DeviceStatus, PendingExportItem } from "./types.js";
 
 export interface DeviceSyncOutcome {
   device: DeviceStatus;

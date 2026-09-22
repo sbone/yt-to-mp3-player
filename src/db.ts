@@ -3,31 +3,13 @@ import { config } from "./config.js";
 import type {
   ChannelOverview,
   ChannelRecord,
+  DeviceSyncRecord,
   DiscoveredVideo,
   RunSummary,
   SyncCounters,
+  VideoRecord,
   VideoStatus
 } from "./types.js";
-
-export interface VideoRecord {
-  id: number;
-  youtube_video_id: string;
-  title: string;
-  upload_date: string | null;
-  status: VideoStatus;
-  local_path: string | null;
-  failure_message: string | null;
-  downloaded_at: string | null;
-  exported_at: string | null;
-  last_seen_at: string;
-}
-
-export interface DeviceSyncRecord {
-  id: number;
-  created_at: string;
-  note: string | null;
-  item_count: number;
-}
 
 export class AppDb {
   private readonly db: Database;

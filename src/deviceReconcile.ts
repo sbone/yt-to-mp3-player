@@ -1,6 +1,6 @@
 import { readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import type { PendingExportItem } from "./deviceSync.js";
+import type { PendingExportItem } from "./types.js";
 
 export interface ReconcileMatch {
   item: PendingExportItem;

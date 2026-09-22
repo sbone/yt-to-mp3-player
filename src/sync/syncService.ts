@@ -4,67 +4,20 @@ import { reconcilePendingAgainstDevice } from "../deviceReconcile.js";
 import { channelUrlForHandle, loadChannelSources } from "../channelSource.js";
 import { Logger } from "../logger.js";
 import { existsSync, statSync, unlinkSync } from "node:fs";
-import type { ChannelRecord, SyncCounters } from "../types.js";
+import type {
+  ChannelRecord,
+  LibrarySyncState,
+  PendingExportItem,
+  PlayerSyncState,
+  SyncCounters,
+  SyncNotification,
+  SyncState
+} from "../types.js";
 import type { DownloadProgress } from "./ytDlp.js";
 import { ExistingDownloadIndex } from "./fileIndex.js";
 import { config } from "../config.js";
-import type { PendingExportItem } from "../deviceSync.js";
 import { createMediaProvider, type MediaProvider } from "./mediaProvider.js";
 import { ensureDemoPendingExport } from "../demoSeed.js";
-
-export interface SyncState {
-  library: LibrarySyncState;
-  player: PlayerSyncState;
-  notifications: SyncNotification[];
-}
-
-export interface LibrarySyncState {
-  running: boolean;
-  startedAt: string | null;
-  runId: number | null;
-  scope: "all" | "single-channel" | null;
-  targetHandle: string | null;
-  currentItemTitle: string | null;
-  currentItemPercent: number | null;
-  currentItemDownloadedBytes: number | null;
-  currentItemTotalBytes: number | null;
-  currentItemPhase: "downloading" | "postprocessing" | null;
-  currentItemSpeed: string | null;
-  currentItemEta: string | null;
-}
-
-export interface PlayerSyncState {
-  running: boolean;
-  startedAt: string | null;
-  runId: number | null;
-  targetVolume: string | null;
-  note: string | null;
-  reconciled: number;
-  copied: number;
-  failed: number;
-  remaining: number;
-  currentItemTitle: string | null;
-  nextPendingItem: PendingExportItem | null;
-  totalItems: number;
-  processedItems: number;
-  totalBytes: number;
-  completedBytes: number;
-  currentItemBytesCopied: number;
-  currentItemBytesTotal: number | null;
-  lastCompletedAt: string | null;
-  lastSummary: string | null;
-  lastFailedCount: number;
-}
-
-export interface SyncNotification {
-  id: string;
-  kind: "library" | "player";
-  title: string;
-  status: "success" | "partial" | "failed";
-  createdAt: string;
-  summary: string;
-  details: string[];
-}
 
 const ZERO_COUNTERS: SyncCounters = {
   discovered: 0,

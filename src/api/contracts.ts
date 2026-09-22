@@ -1,86 +1,15 @@
-import type { ChannelOverview, ChannelRecord, RunSummary, VideoStatus } from "../types.js";
+import type {
+  ChannelOverview,
+  ChannelRecord,
+  DeviceStatus,
+  DeviceSyncRecord,
+  PendingExportItem,
+  RunSummary,
+  SyncState,
+  VideoRecord
+} from "../types.js";
 
-export interface VideoRecord {
-  id: number;
-  youtube_video_id: string;
-  title: string;
-  upload_date: string | null;
-  status: VideoStatus;
-  local_path: string | null;
-  failure_message: string | null;
-  downloaded_at: string | null;
-  exported_at: string | null;
-  last_seen_at: string;
-}
-
-export interface DeviceSyncRecord {
-  id: number;
-  created_at: string;
-  note: string | null;
-  item_count: number;
-}
-
-export interface DeviceStatus {
-  connected: boolean;
-  writable: boolean;
-  volumeName: string | null;
-  mountPath: string | null;
-  reason: string | null;
-}
-
-export interface LibrarySyncState {
-  running: boolean;
-  startedAt: string | null;
-  runId: number | null;
-  scope: "all" | "single-channel" | null;
-  targetHandle: string | null;
-  currentItemTitle: string | null;
-  currentItemPercent: number | null;
-  currentItemDownloadedBytes: number | null;
-  currentItemTotalBytes: number | null;
-  currentItemPhase: "downloading" | "postprocessing" | null;
-  currentItemSpeed: string | null;
-  currentItemEta: string | null;
-}
-
-export interface PlayerSyncState {
-  running: boolean;
-  startedAt: string | null;
-  runId: number | null;
-  targetVolume: string | null;
-  note: string | null;
-  reconciled: number;
-  copied: number;
-  failed: number;
-  remaining: number;
-  currentItemTitle: string | null;
-  nextPendingItem: PendingExportDto | null;
-  totalItems: number;
-  processedItems: number;
-  totalBytes: number;
-  completedBytes: number;
-  currentItemBytesCopied: number;
-  currentItemBytesTotal: number | null;
-  lastCompletedAt: string | null;
-  lastSummary: string | null;
-  lastFailedCount: number;
-}
-
-export interface SyncNotification {
-  id: string;
-  kind: "library" | "player";
-  title: string;
-  status: "success" | "partial" | "failed";
-  createdAt: string;
-  summary: string;
-  details: string[];
-}
-
-export interface SyncState {
-  library: LibrarySyncState;
-  player: PlayerSyncState;
-  notifications: SyncNotification[];
-}
+export type { LibrarySyncState, PlayerSyncState, SyncNotification, SyncState } from "../types.js";
 
 export interface RunEventDto {
   id: number;
@@ -101,13 +30,7 @@ export interface LiveEventDto {
   channel_handle: string | null;
 }
 
-export interface PendingExportDto {
-  id: number;
-  title: string;
-  local_path: string;
-  downloaded_at: string | null;
-  channel_handle: string | null;
-}
+export type PendingExportDto = PendingExportItem;
 
 export interface CookieBlockedVideoDto {
   id: number;
