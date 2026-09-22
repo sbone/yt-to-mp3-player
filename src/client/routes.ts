@@ -27,20 +27,3 @@ export function parseRoute(pathname: string): Route {
   }
   return { kind: "not-found", path: pathname };
 }
-
-export function hrefForRoute(route: Route): string {
-  switch (route.kind) {
-    case "dashboard":
-      return "/";
-    case "channels":
-      return "/channels";
-    case "channel-detail":
-      return `/channels/${encodeURIComponent(route.handle)}`;
-    case "runs":
-      return "/runs";
-    case "run-detail":
-      return `/runs/${route.runId}`;
-    case "not-found":
-      return route.path;
-  }
-}

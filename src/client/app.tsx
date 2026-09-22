@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
-import { BrowserRouter, Link, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Link, useLocation } from "react-router-dom";
 import type { ActionResponse, SyncAndExportActionResponse } from "../api/contracts.js";
 import {
   addSource,
@@ -18,7 +18,7 @@ import {
   startSync,
   startSyncAndExport
 } from "./api.js";
-import { hrefForRoute, parseRoute, type Route } from "./routes.js";
+import { parseRoute, type Route } from "./routes.js";
 import {
   type ChannelDetailMsg,
   type ChannelDetailModel,
@@ -59,7 +59,6 @@ interface AppModel {
 
 type AppMsg =
   | { type: "UrlChanged"; route: Route }
-  | { type: "NavigateRequested"; path: string }
   | { type: "DashboardMsg"; msg: DashboardMsg }
   | { type: "ChannelsMsg"; msg: ChannelsMsg }
   | { type: "ChannelDetailMsg"; msg: ChannelDetailMsg }
@@ -116,8 +115,6 @@ function updateApp(model: AppModel, msg: AppMsg): [AppModel, Cmd[]] {
   switch (msg.type) {
     case "UrlChanged":
       return activateRoute(model, msg.route);
-    case "NavigateRequested":
-      return [model, [{ type: "Navigate", path: msg.path }]];
     case "DashboardMsg": {
       const [dashboard, cmds] = updateDashboardModel(model.dashboard, msg.msg);
       return [{ ...model, dashboard }, cmds];
@@ -164,7 +161,6 @@ function shellTitle(route: Route): string {
 
 function AppProgram(): ReactElement {
   const location = useLocation();
-  const navigate = useNavigate();
   const initialRoute = parseRoute(location.pathname);
   const initialStateRef = useRef<{ model: AppModel; cmds: Cmd[] } | null>(null);
   if (initialStateRef.current === null) {
@@ -338,12 +334,9 @@ function AppProgram(): ReactElement {
               })
             );
           break;
-        case "Navigate":
-          navigate(cmd.path);
-          break;
       }
     }
-  }, [program.seq, navigate]);
+  }, [program.seq]);
 
   useEffect(() => {
     if (program.model.route.kind !== "dashboard") {
@@ -423,7 +416,7 @@ function AppProgram(): ReactElement {
         {route.kind === "not-found" ? (
           <section className="card" {...{ "box-": "round" }}>
             <h1>Not Found</h1>
-            <p className="small mono">Unknown route: {hrefForRoute(route)}</p>
+            <p className="small mono">Unknown route: {route.path}</p>
           </section>
         ) : null}
       </main>

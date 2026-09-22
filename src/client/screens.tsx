@@ -14,11 +14,6 @@ import type {
   SyncNotification
 } from "../api/contracts.js";
 
-export interface CommandContext {
-  routeHandle?: string;
-  routeRunId?: number;
-}
-
 export type Cmd =
   | { type: "FetchDashboard" }
   | { type: "FetchChannels" }
@@ -32,12 +27,7 @@ export type Cmd =
   | { type: "StartSyncAndExport" }
   | { type: "RetryCookieErrors" }
   | { type: "StartPlayerSync" }
-  | { type: "StartChannelSync"; handle: string }
-  | { type: "Navigate"; path: string };
-
-export interface ViewContext {
-  navigate(path: string): void;
-}
+  | { type: "StartChannelSync"; handle: string };
 
 export interface ScreenRenderOptions {
   obfuscateSensitive: boolean;
