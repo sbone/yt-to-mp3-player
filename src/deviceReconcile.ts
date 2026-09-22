@@ -96,39 +96,21 @@ export function reconcilePendingAgainstDevice(pending: PendingExportItem[], moun
     const normalizedName = normalizeName(baseName);
     const candidates = normalizedIndex.get(normalizedName) ?? [];
     const relatedFolderCandidates = candidates.filter((candidate) => folderLooksRelated(candidate, item.local_path));
+    const preferredCandidates = relatedFolderCandidates.length > 0 ? relatedFolderCandidates : candidates;
 
-    if (relatedFolderCandidates.length === 1) {
-      const candidate = relatedFolderCandidates[0]!;
+    if (preferredCandidates.length === 1) {
       normalizedMatches.push({
         item,
-        devicePath: candidate,
+        devicePath: preferredCandidates[0]!,
         matchType: "normalized"
       });
       continue;
     }
 
-    if (relatedFolderCandidates.length > 1) {
+    if (preferredCandidates.length > 1) {
       ambiguous.push({
         item,
-        candidateDevicePaths: relatedFolderCandidates
-      });
-      continue;
-    }
-
-    if (candidates.length === 1) {
-      const candidate = candidates[0]!;
-      normalizedMatches.push({
-        item,
-        devicePath: candidate,
-        matchType: "normalized"
-      });
-      continue;
-    }
-
-    if (candidates.length > 1) {
-      ambiguous.push({
-        item,
-        candidateDevicePaths: candidates
+        candidateDevicePaths: preferredCandidates
       });
       continue;
     }
