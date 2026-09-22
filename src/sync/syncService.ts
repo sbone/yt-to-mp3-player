@@ -26,6 +26,44 @@ const ZERO_COUNTERS: SyncCounters = {
   failed: 0
 };
 
+const IDLE_LIBRARY_STATE: LibrarySyncState = {
+  running: false,
+  startedAt: null,
+  runId: null,
+  scope: null,
+  targetHandle: null,
+  currentItemTitle: null,
+  currentItemPercent: null,
+  currentItemDownloadedBytes: null,
+  currentItemTotalBytes: null,
+  currentItemPhase: null,
+  currentItemSpeed: null,
+  currentItemEta: null
+};
+
+const IDLE_PLAYER_STATE: PlayerSyncState = {
+  running: false,
+  startedAt: null,
+  runId: null,
+  targetVolume: null,
+  note: null,
+  reconciled: 0,
+  copied: 0,
+  failed: 0,
+  remaining: 0,
+  currentItemTitle: null,
+  nextPendingItem: null,
+  totalItems: 0,
+  processedItems: 0,
+  totalBytes: 0,
+  completedBytes: 0,
+  currentItemBytesCopied: 0,
+  currentItemBytesTotal: null,
+  lastCompletedAt: null,
+  lastSummary: null,
+  lastFailedCount: 0
+};
+
 function nextCounters(base: SyncCounters, delta: Partial<SyncCounters>): SyncCounters {
   return {
     discovered: base.discovered + (delta.discovered ?? 0),
@@ -48,42 +86,8 @@ function safeFileSize(item: PendingExportItem): number {
 
 export class SyncService {
   private state: SyncState = {
-    library: {
-      running: false,
-      startedAt: null,
-      runId: null,
-      scope: null,
-      targetHandle: null,
-      currentItemTitle: null,
-      currentItemPercent: null,
-      currentItemDownloadedBytes: null,
-      currentItemTotalBytes: null,
-      currentItemPhase: null,
-      currentItemSpeed: null,
-      currentItemEta: null
-    },
-    player: {
-      running: false,
-      startedAt: null,
-      runId: null,
-      targetVolume: null,
-      note: null,
-      reconciled: 0,
-      copied: 0,
-      failed: 0,
-      remaining: 0,
-      currentItemTitle: null,
-      nextPendingItem: null,
-      totalItems: 0,
-      processedItems: 0,
-      totalBytes: 0,
-      completedBytes: 0,
-      currentItemBytesCopied: 0,
-      currentItemBytesTotal: null,
-      lastCompletedAt: null,
-      lastSummary: null,
-      lastFailedCount: 0
-    },
+    library: { ...IDLE_LIBRARY_STATE },
+    player: { ...IDLE_PLAYER_STATE },
     notifications: []
   };
 
@@ -179,18 +183,11 @@ export class SyncService {
     const runId = this.db.createRun("all", null);
 
     this.setLibraryState({
+      ...IDLE_LIBRARY_STATE,
       running: true,
       startedAt: new Date().toISOString(),
       runId,
-      scope: "all",
-      targetHandle: null,
-      currentItemTitle: null,
-      currentItemPercent: null,
-      currentItemDownloadedBytes: null,
-      currentItemTotalBytes: null,
-      currentItemPhase: null,
-      currentItemSpeed: null,
-      currentItemEta: null
+      scope: "all"
     });
 
     let totals = { ...ZERO_COUNTERS };
@@ -241,20 +238,7 @@ export class SyncService {
           `Errors: ${totals.failed}`
         ]
       });
-      this.setLibraryState({
-        running: false,
-        startedAt: null,
-        runId: null,
-        scope: null,
-        targetHandle: null,
-        currentItemTitle: null,
-        currentItemPercent: null,
-        currentItemDownloadedBytes: null,
-        currentItemTotalBytes: null,
-        currentItemPhase: null,
-        currentItemSpeed: null,
-        currentItemEta: null
-      });
+      this.setLibraryState(IDLE_LIBRARY_STATE);
     }
   }
 
@@ -264,18 +248,12 @@ export class SyncService {
     const index = new ExistingDownloadIndex(config.downloadsDir);
 
     this.setLibraryState({
+      ...IDLE_LIBRARY_STATE,
       running: true,
       startedAt: new Date().toISOString(),
       runId,
       scope: "single-channel",
-      targetHandle: handle,
-      currentItemTitle: null,
-      currentItemPercent: null,
-      currentItemDownloadedBytes: null,
-      currentItemTotalBytes: null,
-      currentItemPhase: null,
-      currentItemSpeed: null,
-      currentItemEta: null
+      targetHandle: handle
     });
 
     this.logger.info(`run=${runId} sync-channel started handle=${handle}`);
@@ -318,26 +296,14 @@ export class SyncService {
           `Errors: ${counters.failed}`
         ]
       });
-      this.setLibraryState({
-        running: false,
-        startedAt: null,
-        runId: null,
-        scope: null,
-        targetHandle: null,
-        currentItemTitle: null,
-        currentItemPercent: null,
-        currentItemDownloadedBytes: null,
-        currentItemTotalBytes: null,
-        currentItemPhase: null,
-        currentItemSpeed: null,
-        currentItemEta: null
-      });
+      this.setLibraryState(IDLE_LIBRARY_STATE);
     }
   }
 
   private async retryCookieBlockedVideos(): Promise<void> {
     const runId = this.db.createRun("all", null);
     this.setLibraryState({
+      ...IDLE_LIBRARY_STATE,
       running: true,
       startedAt: new Date().toISOString(),
       runId,
@@ -423,13 +389,7 @@ export class SyncService {
           `Errors: ${counters.failed}`
         ]
       });
-      this.setLibraryState({
-        running: false,
-        startedAt: null,
-        runId: null,
-        scope: null,
-        targetHandle: null
-      });
+      this.setLibraryState(IDLE_LIBRARY_STATE);
     }
   }
 
@@ -441,24 +401,14 @@ export class SyncService {
 
     const runId = this.db.createRun("player-sync", null);
     this.setPlayerState({
+      ...IDLE_PLAYER_STATE,
       running: true,
       startedAt: new Date().toISOString(),
       runId,
       targetVolume: device.volumeName,
       note,
-      reconciled: 0,
-      copied: 0,
-      failed: 0,
-      remaining: 0,
-      currentItemTitle: null,
-      nextPendingItem: null,
-      totalItems: 0,
-      processedItems: 0,
-      totalBytes: 0,
-      completedBytes: 0,
-      currentItemBytesCopied: 0,
-      currentItemBytesTotal: null,
-      lastSummary: null
+      lastCompletedAt: this.state.player.lastCompletedAt,
+      lastFailedCount: this.state.player.lastFailedCount
     });
 
     this.logger.info(`run=${runId} player-sync started volume=${device.volumeName ?? "unknown"}`);
