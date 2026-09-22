@@ -2,7 +2,7 @@ function trimTrailingSlash(value: string): string {
   return value.endsWith("/") ? value.slice(0, -1) : value;
 }
 
-export function renderSpaShell(title = "yt-to-audio"): string {
+export function renderSpaShell(title = "Local Audio Device Sync"): string {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim();
   const devBase = devServerUrl ? trimTrailingSlash(devServerUrl) : null;
   const headScripts = devBase

@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
 
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -22,4 +27,90 @@ jobs:
         run: npm ci
 
       - name: Typecheck
-        run: ./scripts/check.sh
+        run: npm run check
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Generate portfolio screenshots
+        run: npm run screenshots
+
+      - name: Upload portfolio screenshots
+        id: screenshots-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: portfolio-screenshots
+          path: artifacts/screenshots/*.png
+          retention-days: 14
+
+      - name: Summarize screenshots
+        run: |
+          {
+            echo "## Portfolio screenshots"
+            echo
+            echo "Generated screenshots are attached to this run as the \`portfolio-screenshots\` artifact."
+            echo
+            find artifacts/screenshots -maxdepth 1 -name '*.png' -print | sort | sed 's#^#- #'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment screenshot artifact on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- portfolio-screenshots -->';
+            const artifactUrl = '${{ steps.screenshots-artifact.outputs.artifact-url }}';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const pagesUrl = `https://${context.repo.owner}.github.io/${context.repo.repo}/`;
+            const files = [
+              '01-dashboard-empty-state.png',
+              '02-source-management.png',
+              '03-refresh-progress.png',
+              '04-player-sync.png',
+              '05-recovery-state.png',
+              '06-device-not-mounted.png'
+            ];
+            const body = [
+              marker,
+              '## Portfolio screenshots',
+              '',
+              `Generated screenshots are available in the [portfolio-screenshots artifact](${artifactUrl}).`,
+              '',
+              `Latest main-branch screenshot gallery: ${pagesUrl}`,
+              '',
+              `Workflow run: ${runUrl}`,
+              '',
+              files.map((file) => `- ${file}`).join('\n')
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100
+            });
+            const existing = comments.find((comment) =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body
+              });
+            }

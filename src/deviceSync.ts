@@ -86,6 +86,12 @@ function connectedStatus(mountPath: string, volumeName: string): DeviceStatus {
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export class DeviceSyncService {
   getStatus(): DeviceStatus {
     const configuredMountPath = config.deviceMountPath;
@@ -191,9 +197,18 @@ export class DeviceSyncService {
         mkdirSync(targetDir, { recursive: true });
         const sourceSize = statSync(item.local_path).size;
         emitProgress("copying", item, nextItem, 0, sourceSize);
+        if (config.isDemo) {
+          for (const percent of [15, 34, 53, 72, 90]) {
+            await sleep(140);
+            emitProgress("copying", item, nextItem, Math.round(sourceSize * (percent / 100)), sourceSize);
+          }
+        }
         if (existsSync(targetPath)) {
           const targetSize = statSync(targetPath).size;
           if (sourceSize === targetSize) {
+            if (config.isDemo) {
+              await sleep(120);
+            }
             outcome.alreadyPresent.push(item);
             emitProgress("already-present", item, nextItem, sourceSize, sourceSize);
             continue;

@@ -241,6 +241,18 @@
     margin-bottom: 0.9rem;
   }
 
+  .demo-banner {
+    width: fit-content;
+    margin: 0;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid rgb(229 191 115 / 0.6);
+    background: rgb(229 191 115 / 0.14);
+    color: #ffe2a3;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.82rem;
+  }
+
   .stat-grid {
     display: grid;
     gap: 0.75rem;

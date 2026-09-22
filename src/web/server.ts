@@ -3,14 +3,18 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
   ActionResponse,
+  AddSourceResponse,
   ChannelDetailDto,
   ChannelsDto,
   DashboardDto,
   LiveActivityDto,
+  RemoveSourceResponse,
   RunDetailDto,
   RunsDto,
+  SourcesDto,
   SyncAndExportActionResponse
 } from "../api/contracts.js";
+import { addChannelSource, loadChannelSources, removeChannelSource } from "../channelSource.js";
 import { config } from "../config.js";
 import { AppDb } from "../db.js";
 import { DeviceSyncService } from "../deviceSync.js";
@@ -23,6 +27,7 @@ function createDashboardPayload(
   syncService: SyncService,
   deviceSyncService: DeviceSyncService
 ): DashboardDto {
+  db.reconcileChannelSources(loadChannelSources());
   const channels = db.listChannelsOverview();
   const runs = db.listRecentRuns(10);
   const cookieBlocked = db.listCookieBlockedVideos(50);
@@ -38,6 +43,7 @@ function createDashboardPayload(
     syncState.player.lastFailedCount === 0;
 
   return {
+    mode: config.mode,
     channels,
     runs,
     cookieBlocked,
@@ -56,6 +62,7 @@ function createLivePayload(
   deviceSyncService: DeviceSyncService,
   override?: Partial<Pick<LiveActivityDto, "deviceStatus" | "deviceReadyForExport" | "safeToDisconnect">>
 ): LiveActivityDto {
+  db.reconcileChannelSources(loadChannelSources());
   const deviceStatus = deviceSyncService.getStatus();
   const state = syncService.getState();
   const latestDeviceSync = db.getLatestDeviceSync();
@@ -65,6 +72,7 @@ function createLivePayload(
     deviceStatus.connected && !state.player.running && state.player.remaining === 0 && state.player.lastFailedCount === 0;
 
   return {
+    mode: config.mode,
     state,
     events: db.listRecentEvents(120).reverse(),
     deviceStatus: override?.deviceStatus ?? deviceStatus,
@@ -134,10 +142,50 @@ export function createServer(
   });
 
   app.get("/api/channels", (_req, res) => {
+    const sources = loadChannelSources();
+    db.reconcileChannelSources(sources);
     const payload: ChannelsDto = {
-      channels: db.listChannelsOverview()
+      channels: db.listChannelsOverview(),
+      sources
     };
     res.json(payload);
+  });
+
+  app.get("/api/sources", (_req, res) => {
+    const payload: SourcesDto = {
+      sources: loadChannelSources()
+    };
+    res.json(payload);
+  });
+
+  app.post("/api/sources", (req, res) => {
+    const raw = typeof req.body?.source === "string" ? req.body.source : "";
+    try {
+      const source = addChannelSource(raw);
+      db.upsertChannel(source.key, source.url);
+      const payload: AddSourceResponse = {
+        source,
+        message: `Source added: ${source.key}`
+      };
+      res.status(201).json(payload);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.delete("/api/sources/:key", (req, res) => {
+    const key = req.params.key;
+    try {
+      const source = removeChannelSource(key);
+      db.deactivateChannel(source.key);
+      const payload: RemoveSourceResponse = {
+        source,
+        message: `Source removed: ${source.key}`
+      };
+      res.json(payload);
+    } catch (error) {
+      res.status(404).json({ message: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   app.get("/api/channels/:handle", (req, res) => {

@@ -1,5 +1,5 @@
 {
-  "name": "yt-to-audio-sync",
+  "name": "local-audio-device-sync",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,10 @@
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.json",
     "check": "./scripts/check.sh",
+    "test": "playwright test",
     "test:smoke": "playwright test",
+    "screenshots": "PLAYWRIGHT_SCREENSHOTS=1 playwright test tests/screenshots.spec.ts",
+    "demo": "DEMO_MODE=1 ./scripts/dev.sh",
     "doctor": "./scripts/doctor.sh",
     "reconcile:device": "./scripts/reconcile-device.sh",
     "rebuild:native": "./scripts/rebuild-native.sh",

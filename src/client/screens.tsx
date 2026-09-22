@@ -2,10 +2,12 @@ import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
 import type {
   ActionResponse,
+  AddSourceResponse,
   ChannelDetailDto,
   ChannelsDto,
   DashboardDto,
   LiveActivityDto,
+  RemoveSourceResponse,
   RunDetailDto,
   RunsDto,
   SyncAndExportActionResponse,
@@ -20,6 +22,8 @@ export interface CommandContext {
 export type Cmd =
   | { type: "FetchDashboard" }
   | { type: "FetchChannels" }
+  | { type: "AddSource"; source: string }
+  | { type: "RemoveSource"; key: string }
   | { type: "FetchChannelDetail"; handle: string }
   | { type: "FetchRuns" }
   | { type: "FetchRunDetail"; runId: number }
@@ -82,12 +86,23 @@ export type DashboardMsg =
 
 export interface ChannelsModel {
   data: RemoteData<ChannelsDto>;
+  sourceInput: string;
+  addSourceAction: ActionState;
+  removeSourceAction: ActionState;
+  removingSourceKey: string | null;
 }
 
 export type ChannelsMsg =
   | { type: "LoadRequested" }
   | { type: "Loaded"; data: ChannelsDto }
-  | { type: "LoadFailed"; error: string };
+  | { type: "LoadFailed"; error: string }
+  | { type: "SourceInputChanged"; value: string }
+  | { type: "SourceAddRequested" }
+  | { type: "SourceAdded"; result: AddSourceResponse }
+  | { type: "SourceAddFailed"; error: string }
+  | { type: "SourceRemoveRequested"; key: string }
+  | { type: "SourceRemoved"; result: RemoveSourceResponse }
+  | { type: "SourceRemoveFailed"; error: string };
 
 export interface ChannelDetailModel {
   handle: string | null;
@@ -322,7 +337,11 @@ export function updateDashboardModel(model: DashboardModel, msg: DashboardMsg): 
 
 export function initChannelsModel(): ChannelsModel {
   return {
-    data: { status: "idle", data: null, error: null }
+    data: { status: "idle", data: null, error: null },
+    sourceInput: "",
+    addSourceAction: idleAction(),
+    removeSourceAction: idleAction(),
+    removingSourceKey: null
   };
 }
 
@@ -334,6 +353,34 @@ export function updateChannelsModel(model: ChannelsModel, msg: ChannelsMsg): [Ch
       return [{ ...model, data: { status: "success", data: msg.data, error: null } }, []];
     case "LoadFailed":
       return [{ ...model, data: { status: "failure", data: model.data.data, error: msg.error } }, []];
+    case "SourceInputChanged":
+      return [{ ...model, sourceInput: msg.value }, []];
+    case "SourceAddRequested": {
+      const source = model.sourceInput.trim();
+      if (!source) {
+        return [{ ...model, addSourceAction: failureAction("Enter a source first.") }, []];
+      }
+      return [{ ...model, addSourceAction: workingAction() }, [{ type: "AddSource", source }]];
+    }
+    case "SourceAdded":
+      return [
+        { ...model, sourceInput: "", addSourceAction: successAction(msg.result.message) },
+        [{ type: "FetchChannels" }]
+      ];
+    case "SourceAddFailed":
+      return [{ ...model, addSourceAction: failureAction(msg.error) }, []];
+    case "SourceRemoveRequested":
+      return [
+        { ...model, removeSourceAction: workingAction(), removingSourceKey: msg.key },
+        [{ type: "RemoveSource", key: msg.key }]
+      ];
+    case "SourceRemoved":
+      return [
+        { ...model, removeSourceAction: successAction(msg.result.message), removingSourceKey: null },
+        [{ type: "FetchChannels" }]
+      ];
+    case "SourceRemoveFailed":
+      return [{ ...model, removeSourceAction: failureAction(msg.error), removingSourceKey: null }, []];
   }
 }
 
@@ -689,8 +736,11 @@ export function renderDashboardScreen(
   return (
     <>
       <section className="hero" {...{ "box-": "double" }}>
-        <h1>Channel Sync Dashboard</h1>
-        <p>Tracks channels with yt-dlp and syncs MP3s to a basic USB player.</p>
+        <h1>Local Audio Device Sync</h1>
+        <p>Tracks user-provided media sources and syncs audio files to a basic USB player.</p>
+        {(livePayload?.mode ?? payload?.mode) === "demo" ? (
+          <p className="demo-banner">Demo Mode: no real downloads or devices used.</p>
+        ) : null}
         <div className="actions">
           <button
             type="button"
@@ -844,11 +894,11 @@ export function renderDashboardScreen(
       </section>
 
       <section className="card" {...{ "box-": "round" }}>
-        <h2>Channels</h2>
+        <h2>Sources</h2>
         <table>
           <thead>
             <tr>
-              <th>Handle</th>
+              <th>Source</th>
               <th>Known</th>
               <th>On Player</th>
               <th>Local Only</th>
@@ -1015,7 +1065,11 @@ export function renderDashboardScreen(
   );
 }
 
-export function renderChannelsScreen(model: ChannelsModel, options: ScreenRenderOptions): ReactElement {
+export function renderChannelsScreen(
+  model: ChannelsModel,
+  dispatch: (msg: ChannelsMsg) => void,
+  options: ScreenRenderOptions
+): ReactElement {
   const { obfuscateSensitive } = options;
   const payload = model.data.data;
   const channelCount = payload?.channels.length ?? 0;
@@ -1025,10 +1079,34 @@ export function renderChannelsScreen(model: ChannelsModel, options: ScreenRender
   return (
     <>
       <section className="hero" {...{ "box-": "double" }}>
-        <h1>Tracked Channels</h1>
-        <p>Edit <code>channels.txt</code> to change what is tracked.</p>
+        <h1>Tracked Sources</h1>
+        <p>Add a handle, source URL, or playlist URL. Demo mode stores these in isolated demo data.</p>
+        <form
+          className="inline-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            dispatch({ type: "SourceAddRequested" });
+          }}
+        >
+          <input
+            type="text"
+            value={model.sourceInput}
+            placeholder="@example-source or https://..."
+            aria-label="Source handle or URL"
+            onChange={(event) => dispatch({ type: "SourceInputChanged", value: event.currentTarget.value })}
+          />
+          <button
+            type="submit"
+            {...{ "box-": "round", "variant-": "foreground0" }}
+            disabled={model.addSourceAction.status === "working"}
+          >
+            {renderButtonLabel("Add Source", "Adding Source...", model.addSourceAction.status === "working")}
+          </button>
+        </form>
+        {renderActionState(model.addSourceAction)}
+        {renderActionState(model.removeSourceAction)}
         <div className="stat-grid stat-grid-compact">
-          {statBlock("Channels", channelCount)}
+          {statBlock("Sources", channelCount)}
           {statBlock("Local Only", localOnlyCount)}
           {statBlock("Needs Sync", syncNeededCount, syncNeededCount > 0 ? "warning" : undefined)}
           {statBlock("Cookie Blocked", blockedCount, blockedCount > 0 ? "danger" : undefined)}
@@ -1037,13 +1115,13 @@ export function renderChannelsScreen(model: ChannelsModel, options: ScreenRender
       </section>
       <section className="card" {...{ "box-": "round" }}>
         <div className="section-head">
-          <h2>Channel Ledger</h2>
-          <p className="small mono">Every row shows backlog pressure, last success, and whether that channel is drifting away from the player copy.</p>
+          <h2>Source Ledger</h2>
+          <p className="small mono">Every row shows backlog pressure, last success, and whether that source is drifting away from the player copy.</p>
         </div>
         <table>
           <thead>
             <tr>
-              <th>Handle</th>
+              <th>Source</th>
               <th>URL</th>
               <th>Known videos</th>
               <th>On Player</th>
@@ -1051,25 +1129,43 @@ export function renderChannelsScreen(model: ChannelsModel, options: ScreenRender
               <th>Needs Sync</th>
               <th>Cookie blocked</th>
               <th>Last success</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {payload?.channels.map((channel) => (
-              <tr key={channel.id}>
-                <td>
-                  <Link to={`/channels/${encodeURIComponent(channel.handle)}`}>{sensitiveText(channelLabel(channel.handle), obfuscateSensitive)}</Link>
-                </td>
-                <td>
-                  <a href={channel.url}>{sensitiveText(channel.url, obfuscateSensitive)}</a>
-                </td>
-                <td>{channel.known_videos}</td>
-                <td>{channel.on_player_videos}</td>
-                <td>{channel.local_only_videos}</td>
-                <td>{channel.needs_sync_videos}</td>
-                <td>{channel.cookie_blocked_videos}</td>
-                <td>{fmtDate(channel.last_success_at)}</td>
-              </tr>
-            ))}
+            {payload?.channels.map((channel) => {
+              const isRemoving = model.removeSourceAction.status === "working" && model.removingSourceKey === channel.handle;
+              return (
+                <tr key={channel.id}>
+                  <td>
+                    <Link to={`/channels/${encodeURIComponent(channel.handle)}`}>{sensitiveText(channelLabel(channel.handle), obfuscateSensitive)}</Link>
+                  </td>
+                  <td>
+                    <a href={channel.url}>{sensitiveText(channel.url, obfuscateSensitive)}</a>
+                  </td>
+                  <td>{channel.known_videos}</td>
+                  <td>{channel.on_player_videos}</td>
+                  <td>{channel.local_only_videos}</td>
+                  <td>{channel.needs_sync_videos}</td>
+                  <td>{channel.cookie_blocked_videos}</td>
+                  <td>{fmtDate(channel.last_success_at)}</td>
+                  <td>
+                    <button
+                      type="button"
+                      {...{ "box-": "round", "variant-": "danger" }}
+                      disabled={model.removeSourceAction.status === "working"}
+                      onClick={() => {
+                        if (window.confirm(`Remove ${channelLabel(channel.handle)} from tracked sources?`)) {
+                          dispatch({ type: "SourceRemoveRequested", key: channel.handle });
+                        }
+                      }}
+                    >
+                      {renderButtonLabel("Remove", "Removing...", isRemoving)}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </section>
