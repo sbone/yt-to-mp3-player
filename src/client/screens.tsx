@@ -223,49 +223,25 @@ export function updateDashboardModel(model: DashboardModel, msg: DashboardMsg): 
       );
       const nextRetryAction = settleActionAfterProcess(model.retryAction, msg.data.state.library.running);
       const nextSyncPlayerAction = settleActionAfterProcess(model.syncPlayerAction, msg.data.state.player.running);
-      if (!model.notificationStateInitialized) {
-        return [
-          {
-            ...model,
-            notificationStateInitialized: true,
-            syncAction: nextSyncAction,
-            syncAndExportAction: nextSyncAndExportAction,
-            retryAction: nextRetryAction,
-            syncPlayerAction: nextSyncPlayerAction,
-            seenNotificationIds: msg.data.state.notifications.map((notification) => notification.id),
-            pendingNotificationIds: [],
-            live: { status: "success", data: msg.data, error: null },
-            data:
-              model.data.status === "success" && model.data.data
-                ? {
-                    status: "success",
-                    data: {
-                      ...model.data.data,
-                      syncState: msg.data.state,
-                      deviceStatus: msg.data.deviceStatus ?? model.data.data.deviceStatus,
-                      deviceReadyForExport: msg.data.deviceReadyForExport ?? model.data.data.deviceReadyForExport,
-                      safeToDisconnect: msg.data.safeToDisconnect ?? model.data.data.safeToDisconnect
-                    },
-                    error: null
-                  }
-                : model.data
-          },
-          []
-        ];
-      }
+      const notificationIds = msg.data.state.notifications.map((notification) => notification.id);
       const knownNotificationIds = new Set(model.seenNotificationIds);
-      const nextNotificationIds = msg.data.state.notifications
-        .map((notification) => notification.id)
-        .filter((id) => !knownNotificationIds.has(id));
+      const nextNotificationIds = model.notificationStateInitialized
+        ? notificationIds.filter((id) => !knownNotificationIds.has(id))
+        : [];
       return [
         {
           ...model,
+          notificationStateInitialized: true,
           syncAction: nextSyncAction,
           syncAndExportAction: nextSyncAndExportAction,
           retryAction: nextRetryAction,
           syncPlayerAction: nextSyncPlayerAction,
-          seenNotificationIds: [...model.seenNotificationIds, ...nextNotificationIds],
-          pendingNotificationIds: [...model.pendingNotificationIds, ...nextNotificationIds],
+          seenNotificationIds: model.notificationStateInitialized
+            ? [...model.seenNotificationIds, ...nextNotificationIds]
+            : notificationIds,
+          pendingNotificationIds: model.notificationStateInitialized
+            ? [...model.pendingNotificationIds, ...nextNotificationIds]
+            : [],
           live: { status: "success", data: msg.data, error: null },
           data:
             model.data.status === "success" && model.data.data
