@@ -8,16 +8,46 @@ Local TypeScript app with an Express API and React SPA. It tracks YouTube channe
 
 ## Requirements
 
-- Node.js 22.x
-- `yt-dlp` in `PATH`
-- `ffmpeg` in `PATH`
+- Node.js 22.14.0 (includes npm 10.9.2), pinned in `.tool-versions`
+- Deno 2.6.3, pinned in `.tool-versions`, for yt-dlp's YouTube JavaScript challenges
+- `yt-dlp` and `ffmpeg` in `PATH` (installed with Homebrew on macOS)
 
 ## Setup
 
+On macOS, install the tools and register the asdf plugins (once per machine):
+
 ```bash
-/opt/homebrew/bin/asdf exec npm ci
-./scripts/dev.sh
+brew bundle
+asdf plugin add nodejs https://github.com/asdf-vm/asdf-nodejs.git
+asdf plugin add deno https://github.com/asdf-community/asdf-deno.git
 ```
+
+Skip `plugin add` for plugins already listed by `asdf plugin list`.
+Add this line to the end of `~/.zshrc`, after any Homebrew/PATH setup:
+
+```bash
+export PATH="${ASDF_DATA_DIR:-$HOME/.asdf}/shims:$PATH"
+```
+
+Then, from this repository:
+
+```bash
+source ~/.zshrc
+asdf install
+node --version # v22.14.0
+npm ci
+npm run dev
+```
+
+If `npm install` reports `EBADENGINE` with Node 24, the shell is bypassing
+asdf's shims. Fix the PATH line above and open a new terminal or source
+`~/.zshrc` before retrying. Keep `engine-strict` enabled.
+
+Homebrew manages FFmpeg's codecs and yt-dlp's Python dependencies. These
+tools are declared in `Brewfile`, but their versions are not pinned. The
+asdf FFmpeg plugin requires a source build with MP3 support enabled, and
+the yt-dlp plugin does not install its extra Python dependencies. Update
+yt-dlp with `brew upgrade yt-dlp` when YouTube changes break downloads.
 
 Open `http://127.0.0.1:3000`.
 
@@ -89,8 +119,9 @@ This builds the backend into `dist/` and the client into `dist/public`.
 
 ## Runtime note
 
-- `.tool-versions` pins `nodejs 22.14.0`.
-- On this Mac, mismatched Node versions can break the native `better-sqlite3` binding.
+- `.tool-versions` pins Node and Deno; CI reads the same Node pin.
+- npm comes with Node; application dependencies are pinned in `package-lock.json`.
+- Mismatched Node versions can break the native `better-sqlite3` binding.
 - If that happens after reinstalling dependencies, run `./scripts/rebuild-native.sh`.
 
 ## Tailscale
