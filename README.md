@@ -34,8 +34,8 @@ Then, from this repository:
 ```bash
 source ~/.zshrc
 asdf install
-node --version # v22.14.0
 npm ci
+./scripts/doctor.sh
 npm run dev
 ```
 
@@ -43,11 +43,14 @@ If `npm install` reports `EBADENGINE` with Node 24, the shell is bypassing
 asdf's shims. Fix the PATH line above and open a new terminal or source
 `~/.zshrc` before retrying. Keep `engine-strict` enabled.
 
-Homebrew manages FFmpeg's codecs and yt-dlp's Python dependencies. These
-tools are declared in `Brewfile`, but their versions are not pinned. The
-asdf FFmpeg plugin requires a source build with MP3 support enabled, and
-the yt-dlp plugin does not install its extra Python dependencies. Update
-yt-dlp with `brew upgrade yt-dlp` when YouTube changes break downloads.
+Homebrew manages yt-dlp and FFmpeg, including FFmpeg's MP3 support. Their
+versions are intentionally not pinned because yt-dlp must keep pace with
+YouTube changes. Run `brew upgrade yt-dlp` if extraction starts failing, or
+`brew upgrade ffmpeg` if audio conversion starts failing.
+
+Deno is separate from the Node runtime used by the app. yt-dlp recommends
+Deno and enables it by default for YouTube's JavaScript challenges; keep the
+pinned Deno executable available in `PATH`.
 
 Open `http://127.0.0.1:3000`.
 
@@ -69,6 +72,9 @@ npm run dev:client
 ./scripts/check.sh
 ./scripts/reconcile-device.sh
 ```
+
+`doctor.sh` verifies the pinned Node and Deno versions, yt-dlp, FFmpeg, and
+the native `better-sqlite3` binding.
 
 ## Content sources
 
@@ -119,7 +125,8 @@ This builds the backend into `dist/` and the client into `dist/public`.
 
 ## Runtime note
 
-- `.tool-versions` pins Node and Deno; CI reads the same Node pin.
+- `.tool-versions` pins Node and Deno; the scripts use those tools from `PATH`,
+  and CI reads the same Node pin.
 - npm comes with Node; application dependencies are pinned in `package-lock.json`.
 - Mismatched Node versions can break the native `better-sqlite3` binding.
 - If that happens after reinstalling dependencies, run `./scripts/rebuild-native.sh`.

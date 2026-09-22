@@ -3,20 +3,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-ASDF_BIN="$(command -v asdf 2>/dev/null || true)"
-if [ -z "$ASDF_BIN" ] && [ -x /opt/homebrew/bin/asdf ]; then
-  ASDF_BIN=/opt/homebrew/bin/asdf
-fi
-
-NODE_CMD=(node)
-if [ -n "$ASDF_BIN" ]; then
-  NODE_CMD=("$ASDF_BIN" exec node)
-fi
-
 APPLY_MODE="${1:-}"
 export APPLY_MODE
 
-"${NODE_CMD[@]}" --import tsx --input-type=module <<'EOF'
+node --import tsx --input-type=module <<'EOF'
 import { AppDb } from "./src/db.ts";
 import { DeviceSyncService } from "./src/deviceSync.ts";
 import { reconcilePendingAgainstDevice } from "./src/deviceReconcile.ts";
