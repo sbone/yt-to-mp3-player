@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { config } from "./config.js";
 import { saveChannelSources } from "./channelSource.js";
@@ -72,7 +72,7 @@ export function seedDemoData(db: AppDb): void {
       if (!existsSync(localPath)) {
         writeFileSync(localPath, `Demo MP3 placeholder for ${item.video.title}\n`, "utf8");
       }
-      db.markVideoDownloaded(upserted.id, localPath, 48);
+      db.markVideoDownloaded(upserted.id, localPath, statSync(localPath).size);
     } else if (item.state === "failed") {
       db.markVideoFailed(upserted.id, "Demo recovery state: previous transfer was interrupted.");
     } else {
@@ -101,5 +101,5 @@ export function ensureDemoPendingExport(db: AppDb): void {
   const localPath = `${config.downloadsDir}/${video.channelName}/${video.uploadDate} - ${video.title} [${video.youtubeVideoId}].mp3`;
   mkdirSync(dirname(localPath), { recursive: true });
   writeFileSync(localPath, `Demo MP3 placeholder for ${video.title}\n`.repeat(32_000), "utf8");
-  db.markVideoDownloaded(upserted.id, localPath, 1_200_000);
+  db.markVideoDownloaded(upserted.id, localPath, statSync(localPath).size);
 }

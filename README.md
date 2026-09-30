@@ -146,9 +146,11 @@ See [docs/architecture.md](docs/architecture.md) for a deeper walkthrough.
 ## Reliability Decisions
 
 - Sync runs are persisted and reconciled on startup if the server stops mid-run.
-- Device export writes to `.part` files and renames only after size verification.
-- Existing player files are detected before copying to avoid duplicate transfers.
-- Deleted player files clear their exported state and become pending again.
+- Device export writes to `.part` files and renames only after size and SHA-256 verification.
+- Exact player matches are verified before removing local audio; fuzzy filename matches remain suggestions.
+- Missing or truncated player files are re-queued in SQLite for the next library refresh.
+- Library refresh retries stored recovery items even when they are absent from the current feed.
+- The combined refresh-and-sync action finishes the library refresh before exporting.
 - Live progress is streamed over SSE so the UI reflects long-running work without refreshes.
 - npm dependencies are locked in `package-lock.json`.
 - Mismatched Node versions can break `better-sqlite3`; run `npm run rebuild:native` after correcting the active Node version.

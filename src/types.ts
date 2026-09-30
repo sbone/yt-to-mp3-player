@@ -29,6 +29,7 @@ export interface DeviceStatus {
 }
 
 export interface PendingExportItem {
+  file_size_bytes?: number | null;
   id: number;
   title: string;
   local_path: string;

@@ -92,3 +92,51 @@ test("download does not let a stale archive block recovery", async () => {
     delete process.env.RECOVERY_OUTPUT;
   }
 });
+
+test("player sync repairs corrupt audio and copies instead of trusting fuzzy matches", async () => {
+  const channel = db.upsertChannel("source", "https://www.youtube.com/@source/videos");
+  const deviceFolder = join(config.deviceMountPath!, "cache");
+  mkdirSync(deviceFolder);
+  for (const [id, filename] of [["repair", "repair [repair].mp3"], ["fuzzy", "01 - Track [fuzzy].mp3"]]) {
+    const path = join(config.downloadsDir, filename);
+    writeFileSync(path, "good");
+    db.markVideoDownloaded(db.upsertDiscoveredVideo(channel.id, video(id)).id, path, 4);
+  }
+  writeFileSync(join(deviceFolder, "repair [repair].mp3"), "bad!");
+  writeFileSync(join(deviceFolder, "Track.mp3"), "bad!");
+  const service = new SyncService(db, new Logger(), new DeviceSyncService(), provider([], []));
+  expect(service.startPlayerSync()).toBe(true);
+  await expect.poll(() => service.getState().player.running).toBe(false);
+  expect(readFileSync(join(deviceFolder, "repair [repair].mp3"), "utf8")).toBe("good");
+  expect(readFileSync(join(deviceFolder, "01 - Track [fuzzy].mp3"), "utf8")).toBe("good");
+  expect(readFileSync(join(deviceFolder, "Track.mp3"), "utf8")).toBe("bad!");
+  expect(db.listExportedVideos()).toHaveLength(2);
+});
+
+test("missing local audio is reported as an error and re-queued for download", async () => {
+  const channel = db.upsertChannel("source", "https://www.youtube.com/@source/videos");
+  const record = db.upsertDiscoveredVideo(channel.id, video("missing"));
+  db.markVideoDownloaded(record.id, join(config.downloadsDir, "missing.mp3"), 4);
+  const service = new SyncService(db, new Logger(), new DeviceSyncService(), provider([], []));
+  expect(service.startPlayerSync()).toBe(true);
+  await expect.poll(() => service.getState().player.running).toBe(false);
+  expect(service.getState().player.lastFailedCount).toBe(1);
+  expect(service.getState().notifications[0]?.status).toBe("partial");
+  expect(db.listRetryableVideos(channel.id).map((item) => item.youtubeVideoId)).toEqual(["missing"]);
+});
+
+test("truncated exported audio is re-queued after the local cache was removed", async () => {
+  const channel = db.upsertChannel("source", "https://www.youtube.com/@source/videos");
+  const record = db.upsertDiscoveredVideo(channel.id, video("truncated"));
+  const path = join(config.downloadsDir, "truncated [truncated].mp3");
+  db.markVideoDownloaded(record.id, path, 10);
+  db.markVideosAsExported([record.id], null);
+  const deviceFolder = join(config.deviceMountPath!, "cache");
+  mkdirSync(deviceFolder);
+  writeFileSync(join(deviceFolder, "truncated [truncated].mp3"), "short");
+  const service = new SyncService(db, new Logger(), new DeviceSyncService(), provider([], []));
+  expect(service.startPlayerSync()).toBe(true);
+  await expect.poll(() => service.getState().player.running).toBe(false);
+  expect(db.listExportedVideos()).toHaveLength(0);
+  expect(db.listRetryableVideos(channel.id).map((item) => item.youtubeVideoId)).toEqual(["truncated"]);
+});
