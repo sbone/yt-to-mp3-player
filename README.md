@@ -87,6 +87,7 @@ Install Chromium once before running browser tests or generating screenshots:
 ```bash
 npx playwright install chromium
 npm test
+npm run test:production
 npm run screenshots
 ```
 
