@@ -31,7 +31,6 @@ export const config = {
   deviceVolumeName: process.env.DEVICE_VOLUME_NAME?.trim() || "AGP-A02T",
   channelListPath: mode === "demo" ? resolve(dataDir, "sources.txt") : resolve(rootDir, "channels.txt"),
   dbPath: resolve(dataDir, "app.db"),
-  archivePath: resolve(dataDir, "archive.txt"),
   downloadsDir,
   demoPlayerDir,
   logsDir,
