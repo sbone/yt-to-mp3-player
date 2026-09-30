@@ -1,15 +1,9 @@
 import { readdirSync, statSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, extname, join } from "node:path";
 
 interface IndexedFile {
   path: string;
-  normalizedBasename: string;
-  normalizedParent: string;
   size: number;
-}
-
-function normalize(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 function walk(rootDir: string): string[] {
@@ -43,39 +37,16 @@ export class ExistingDownloadIndex {
 
   constructor(downloadsDir: string) {
     this.files = walk(downloadsDir).map((path) => {
-      const parent = basename(dirname(path));
       return {
         path,
-        normalizedBasename: normalize(basename(path, extname(path))),
-        normalizedParent: normalize(parent),
         size: statSync(path).size
       };
     });
   }
 
-  findLikelyMatch(title: string, channelHints: string[]): { path: string; size: number } | null {
-    const normalizedTitle = normalize(title);
-    if (!normalizedTitle) {
-      return null;
-    }
-
-    const normalizedHints = channelHints.map(normalize).filter(Boolean);
-    const exact = this.files.find((file) => {
-      if (!file.normalizedBasename.includes(normalizedTitle)) {
-        return false;
-      }
-      if (normalizedHints.length === 0) {
-        return true;
-      }
-      return normalizedHints.some((hint) => file.normalizedParent.includes(hint));
-    });
-
-    if (exact) {
-      return { path: exact.path, size: exact.size };
-    }
-
-    // Fallback: title-only heuristic if channel folder names changed over time.
-    const titleOnly = this.files.find((file) => file.normalizedBasename.includes(normalizedTitle));
-    return titleOnly ? { path: titleOnly.path, size: titleOnly.size } : null;
+  findByVideoId(videoId: string): { path: string; size: number } | null {
+    const matches = this.files.filter((file) => basename(file.path).includes(`[${videoId}].mp3`) && file.size > 0);
+    const match = matches.length === 1 ? matches[0] : null;
+    return match ? { path: match.path, size: match.size } : null;
   }
 }

@@ -6,7 +6,7 @@ const appOrigin = `http://127.0.0.1:${appPort}`;
 
 export default defineConfig({
   testDir: "./tests",
-  testIgnore: process.env.PLAYWRIGHT_SCREENSHOTS === "1" ? [] : ["**/screenshots.spec.ts"],
+  testMatch: process.env.PLAYWRIGHT_SCREENSHOTS === "1" ? "**/screenshots.spec.ts" : "**/smoke.spec.ts",
   timeout: 30_000,
   fullyParallel: false,
   use: {

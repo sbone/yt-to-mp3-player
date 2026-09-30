@@ -85,6 +85,8 @@ function safeFileSize(item: PendingExportItem): number {
 }
 
 export class SyncService {
+  private combinedSyncRunning = false;
+
   private state: SyncState = {
     library: { ...IDLE_LIBRARY_STATE },
     player: { ...IDLE_PLAYER_STATE },
@@ -121,7 +123,7 @@ export class SyncService {
   }
 
   startSyncAll(): boolean {
-    if (this.state.library.running) {
+    if (this.state.library.running || this.combinedSyncRunning) {
       return false;
     }
     void this.syncAll();
@@ -129,13 +131,21 @@ export class SyncService {
   }
 
   startSyncAllAndExport(note: string | null = null): { libraryStarted: boolean; playerStarted: boolean } {
-    const libraryStarted = this.startSyncAll();
-    const playerStarted = this.startPlayerSync(note);
-    return { libraryStarted, playerStarted };
+    if (this.state.library.running || this.state.player.running || this.combinedSyncRunning) {
+      return { libraryStarted: false, playerStarted: false };
+    }
+    const device = this.deviceSyncService.getStatus();
+    if (!device.connected || !device.mountPath || !device.writable) {
+      return { libraryStarted: false, playerStarted: false };
+    }
+    this.combinedSyncRunning = true;
+    void this.syncAllAndExport(note);
+    // Both operations are accepted; the player operation waits for refresh.
+    return { libraryStarted: true, playerStarted: true };
   }
 
   startSyncChannel(handle: string): boolean {
-    if (this.state.library.running) {
+    if (this.state.library.running || this.combinedSyncRunning) {
       return false;
     }
     void this.syncSingleChannel(handle);
@@ -143,7 +153,7 @@ export class SyncService {
   }
 
   startRetryCookieBlocked(): boolean {
-    if (this.state.library.running) {
+    if (this.state.library.running || this.combinedSyncRunning) {
       return false;
     }
     void this.retryCookieBlockedVideos();
@@ -151,7 +161,7 @@ export class SyncService {
   }
 
   startPlayerSync(note: string | null = null): boolean {
-    if (this.state.player.running) {
+    if (this.state.player.running || this.combinedSyncRunning) {
       return false;
     }
     const device = this.deviceSyncService.getStatus();
@@ -160,6 +170,15 @@ export class SyncService {
     }
     void this.syncPlayer(note);
     return true;
+  }
+
+  private async syncAllAndExport(note: string | null): Promise<void> {
+    try {
+      await this.syncAll();
+      await this.syncPlayer(note);
+    } finally {
+      this.combinedSyncRunning = false;
+    }
   }
 
   private setLibraryState(next: Partial<LibrarySyncState>): void {
@@ -660,7 +679,7 @@ export class SyncService {
     const summary = `Synced ${syncedCount} track${syncedCount === 1 ? "" : "s"} to player with ${errorCount} error${errorCount === 1 ? "" : "s"}.`;
     this.setPlayerState({
       copied: copyOutcome.copied.length + copyOutcome.alreadyPresent.length,
-      failed: copyOutcome.failed.length,
+      failed: errorCount,
       remaining: copyOutcome.failed.length + copyOutcome.missingSource.length,
       currentItemTitle: null,
       nextPendingItem: null,
@@ -669,7 +688,7 @@ export class SyncService {
       completedBytes: totalBytes,
       currentItemBytesCopied: 0,
       currentItemBytesTotal: null,
-      lastFailedCount: copyOutcome.failed.length
+      lastFailedCount: errorCount
     });
     return summary;
   }
@@ -681,7 +700,6 @@ export class SyncService {
   ): Promise<{ ok: boolean; counters: SyncCounters }> {
     let counters = { ...ZERO_COUNTERS };
     let ok = true;
-    let knownVideoStreak = 0;
     this.db.addEvent(runId, "info", "channel-start", `checking channel ${channel.handle}`, channel.id);
     this.logger.info(`run=${runId} channel=${channel.handle} checking`);
 
@@ -695,26 +713,12 @@ export class SyncService {
         channel.id
       );
 
-      for (const item of discovered) {
+      const discoveredIds = new Set(discovered.map((item) => item.youtubeVideoId));
+      const retries = this.db.listRetryableVideos(channel.id).filter((item) => !discoveredIds.has(item.youtubeVideoId));
+      for (const item of [...discovered, ...retries]) {
         const upsert = this.db.upsertDiscoveredVideo(channel.id, item);
         if (upsert.isNew) {
           counters = nextCounters(counters, { discovered: 1 });
-          knownVideoStreak = 0;
-        } else {
-          knownVideoStreak += 1;
-          if (knownVideoStreak >= config.knownVideoStreakCutoff) {
-            this.db.addEvent(
-              runId,
-              "info",
-              "channel-cutoff",
-              `stopped after ${knownVideoStreak} consecutive known videos`,
-              channel.id
-            );
-            this.logger.info(
-              `run=${runId} channel=${channel.handle} reached known-video cutoff streak=${knownVideoStreak}`
-            );
-            break;
-          }
         }
 
         if (upsert.status === "downloaded" || upsert.status === "cookie_blocked") {
@@ -722,7 +726,7 @@ export class SyncService {
           continue;
         }
 
-        const likely = index.findLikelyMatch(item.title, [channel.handle, item.channelName ?? ""]);
+        const likely = index.findByVideoId(item.youtubeVideoId);
         if (likely) {
           this.db.markVideoDownloaded(upsert.id, likely.path, likely.size);
           this.db.addEvent(

@@ -110,7 +110,7 @@ npm run screenshots
 - Set `DEVICE_MOUNT_PATH=/Volumes/YourVolumeName` to bypass volume detection.
 - The app preserves source folders on the device.
 - `npm run reconcile:device` reports pending tracks already present on the player.
-- `npm run reconcile:device -- --apply` marks high-confidence matches as exported without copying or deleting files.
+- `npm run reconcile:device -- --apply` marks verified exact matches as exported without copying or deleting files.
 
 ## Constraints
 
@@ -155,7 +155,6 @@ See [docs/architecture.md](docs/architecture.md) for a deeper walkthrough.
 ## State and Files
 
 - App DB: `data/app.db`
-- Download archive: `data/archive.txt`
 - Logs: `data/logs/app.log`
 - Downloads: `downloads/`
 
