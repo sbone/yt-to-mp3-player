@@ -34,23 +34,22 @@ In demo mode:
 
 ## Runtime Setup
 
-The project pins Node.js 22.23.3 and Deno 2.6.3 in `.tool-versions`. Node runs the app and build tools. Deno is yt-dlp's recommended runtime for YouTube's JavaScript challenges and is enabled by yt-dlp by default.
+Node.js 22.23.3 is pinned in `.tool-versions` and managed by asdf. Homebrew manages the media tools through `Brewfile`: yt-dlp, its Deno dependency, and FFmpeg (including FFprobe and MP3 encoding). npm manages app packages through `package-lock.json`. Deno handles YouTube JavaScript challenges and is enabled by yt-dlp by default.
 
-On macOS, install the system tools and register the asdf plugins once:
+On macOS, install the system tools and register the Node asdf plugin once:
 
 ```bash
 brew bundle
 asdf plugin add nodejs https://github.com/asdf-vm/asdf-nodejs.git
-asdf plugin add deno https://github.com/asdf-community/asdf-deno.git
 ```
 
-Skip either `plugin add` command when that plugin already appears in `asdf plugin list`. Add asdf's shims to the end of `~/.zshrc`, after other Homebrew or `PATH` setup:
+Skip `plugin add` when `nodejs` already appears in `asdf plugin list`. Add asdf's shims to the end of `~/.zshrc`, after other Homebrew or `PATH` setup:
 
 ```bash
 export PATH="${ASDF_DATA_DIR:-$HOME/.asdf}/shims:$PATH"
 ```
 
-Then install the pinned runtimes and app dependencies:
+Then install the pinned Node runtime and app dependencies:
 
 ```bash
 source ~/.zshrc
@@ -59,13 +58,21 @@ npm ci
 ./scripts/doctor.sh
 ```
 
-`doctor.sh` verifies Node, Deno, yt-dlp, FFmpeg, and the native `better-sqlite3` binding. If npm reports `EBADENGINE` with Node 24, the shell is bypassing asdf's shims; fix the `PATH` line and open a new terminal or source `~/.zshrc` before retrying.
+`doctor.sh` verifies the pinned Node version, runnable Deno/yt-dlp/FFmpeg/FFprobe binaries, MP3 encoding support, and the native `better-sqlite3` binding. If npm reports `EBADENGINE` with Node 24, the shell is bypassing asdf's shims; fix the `PATH` line and open a new terminal or source `~/.zshrc` before retrying.
 
-Homebrew manages yt-dlp and FFmpeg, including FFmpeg's MP3 support. Their versions are intentionally not pinned because yt-dlp must keep pace with YouTube changes. Run `brew upgrade yt-dlp` if extraction starts failing, or `brew upgrade ffmpeg` if audio conversion starts failing.
+Media tool versions are intentionally not pinned: yt-dlp and its JavaScript runtime must keep pace with YouTube changes. Deno is installed through yt-dlp's Homebrew dependency; no separate asdf Deno plugin is needed.
+
+To update the media tools and verify the installation:
+
+```bash
+brew update
+brew upgrade yt-dlp deno ffmpeg
+npm run doctor
+```
 
 ## Normal Mode
 
-Normal mode requires Deno, yt-dlp, and FFmpeg in `PATH` in addition to Node and the npm dependencies:
+Normal mode requires Deno, yt-dlp, FFmpeg, and FFprobe in `PATH` in addition to Node and the npm dependencies:
 
 ```bash
 npm run dev

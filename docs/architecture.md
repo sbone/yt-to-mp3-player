@@ -9,6 +9,8 @@ Local Audio Device Sync is a local-first React/TypeScript app with an Express AP
 - Live dashboard updates use server-sent events from `/api/events`.
 - Build output places server code in `dist/` and client assets in `dist/public/`.
 
+Node is pinned through asdf in `.tool-versions`. Homebrew installs yt-dlp (with Deno) and FFmpeg/FFprobe through `Brewfile`; `npm run doctor` checks runnable binaries and MP3 encoding support.
+
 ## State Model
 
 SQLite tracks:

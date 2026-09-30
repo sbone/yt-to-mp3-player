@@ -4,7 +4,6 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 EXPECTED_NODE="$(awk '$1 == "nodejs" { print $2; exit }' .tool-versions)"
-EXPECTED_DENO="$(awk '$1 == "deno" { print $2; exit }' .tool-versions)"
 FAILED=0
 NODE_AVAILABLE=0
 
@@ -25,20 +24,32 @@ if check_command node; then
   fi
 fi
 
-if check_command deno; then
-  DENO_VERSION="$(deno --version | awk 'NR == 1 { print $2 }')"
-  echo "deno: $DENO_VERSION (expected $EXPECTED_DENO)"
-  if [ "$DENO_VERSION" != "$EXPECTED_DENO" ]; then
+for tool in deno yt-dlp ffmpeg ffprobe; do
+  if check_command "$tool"; then
+    version_flag="--version"
+    if [ "$tool" = "ffmpeg" ] || [ "$tool" = "ffprobe" ]; then
+      version_flag="-version"
+    fi
+    if version_output="$("$tool" "$version_flag" 2>&1)"; then
+      echo "$tool: ${version_output%%$'\n'*}"
+    else
+      echo "$tool: failed to run"
+      FAILED=1
+    fi
+  fi
+done
+
+if command -v ffmpeg >/dev/null; then
+  if encoder_info="$(ffmpeg -hide_banner -h encoder=libmp3lame 2>&1)" && [[ "$encoder_info" == *"Encoder libmp3lame"* ]]; then
+    echo "ffmpeg MP3 encoder: ok"
+  else
+    echo "ffmpeg MP3 encoder: missing libmp3lame"
     FAILED=1
   fi
 fi
 
-if check_command yt-dlp; then
-  echo "yt-dlp: $(yt-dlp --version)"
-fi
-
-if check_command ffmpeg; then
-  echo "$(ffmpeg -version 2>/dev/null | awk 'NR == 1 { print $1 ": " $3 }')"
+if [ "$FAILED" -ne 0 ]; then
+  echo "Runtime setup: brew bundle, then asdf install (see README.md)."
 fi
 
 if [ ! -d node_modules ]; then
