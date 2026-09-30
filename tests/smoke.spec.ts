@@ -228,3 +228,19 @@ test.describe("dev SPA smoke", () => {
     ).toEqual([]);
   });
 });
+
+test("development assets and hot reload use the app origin", async ({ page, baseURL }) => {
+  test.skip(process.env.PLAYWRIGHT_PRODUCTION === "1", "Hot reload is development-only.");
+  const sockets: string[] = [];
+  const assets: string[] = [];
+  page.on("websocket", (socket) => sockets.push(socket.url()));
+  page.on("request", (request) => {
+    if (request.url().includes("/@vite/client") || request.url().includes("/src/client/main.tsx")) {
+      assets.push(request.url());
+    }
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Local Audio Device Sync" })).toBeVisible();
+  expect(assets).toEqual(expect.arrayContaining([`${baseURL}/@vite/client`, `${baseURL}/src/client/main.tsx`]));
+  await expect.poll(() => sockets.some((url) => url.startsWith(baseURL!.replace("http:", "ws:") + "/"))).toBe(true);
+});
