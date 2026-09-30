@@ -27,20 +27,21 @@
   "dependencies": {
     "@webtui/css": "0.1.7",
     "better-sqlite3": "11.8.1",
-    "express": "4.21.2",
+    "express": "4.22.3",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "react-router-dom": "7.15.0"
+    "react-router-dom": "7.18.4"
   },
   "devDependencies": {
-    "@playwright/test": "1.60.0",
+    "@playwright/test": "1.63.0",
+    "@types/better-sqlite3": "9.6.0",
     "@types/express": "4.17.21",
-    "@types/node": "22.13.10",
+    "@types/node": "22.20.4",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.1",
-    "tsx": "4.19.3",
+    "@vitejs/plugin-react": "6.1.1",
+    "tsx": "4.23.15",
     "typescript": "5.8.2",
-    "vite": "8.0.12"
+    "vite": "8.3.1"
   }
 }
