@@ -21,16 +21,15 @@ export class HttpError extends Error {
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
+  const text = await response.text();
   try {
-    const body = (await response.json()) as { message?: string };
-    if (body.message) {
+    const body = JSON.parse(text) as { message?: string };
+    if (typeof body.message === "string" && body.message) {
       return body.message;
     }
   } catch {
-    // Fall back to response text below.
+    // Plain-text and HTML errors still have a useful response body.
   }
-
-  const text = await response.text();
   return text || `Request failed with status ${response.status}`;
 }
 
