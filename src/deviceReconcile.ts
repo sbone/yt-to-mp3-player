@@ -1,5 +1,6 @@
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { filesMatch } from "./fileVerification.js";
 import type { PendingExportItem } from "./types.js";
 
 export interface ReconcileMatch {
@@ -70,7 +71,11 @@ function folderLooksRelated(devicePath: string, localPath: string): boolean {
 
 export function reconcilePendingAgainstDevice(pending: PendingExportItem[], mountPath: string): DeviceReconcileReport {
   const deviceFiles = walkAudioFiles(mountPath);
-  const exactByBaseName = new Map(deviceFiles.map((path) => [basename(path), path]));
+  const exactByBaseName = new Map<string, string[]>();
+  for (const path of deviceFiles) {
+    const key = basename(path);
+    exactByBaseName.set(key, [...(exactByBaseName.get(key) ?? []), path]);
+  }
   const normalizedIndex = new Map<string, string[]>();
 
   for (const path of deviceFiles) {
@@ -87,9 +92,21 @@ export function reconcilePendingAgainstDevice(pending: PendingExportItem[], moun
 
   for (const item of pending) {
     const baseName = basename(item.local_path);
-    const exactPath = exactByBaseName.get(baseName);
-    if (exactPath) {
+    const exactCandidates = exactByBaseName.get(baseName) ?? [];
+    const related = exactCandidates.filter((path) => basename(dirname(path)) === basename(dirname(item.local_path)));
+    const candidatesByName = related.length > 0 ? related : exactCandidates;
+    const exactPath = candidatesByName.length === 1 ? candidatesByName[0] : undefined;
+    if (exactPath && (!existsSync(item.local_path) || filesMatch(item.local_path, exactPath))) {
       exactMatches.push({ item, devicePath: exactPath, matchType: "exact" });
+      continue;
+    }
+
+    if (exactCandidates.length > 0) {
+      if (candidatesByName.length > 1) {
+        ambiguous.push({ item, candidateDevicePaths: candidatesByName });
+      } else {
+        unmatched.push({ item, normalizedName: normalizeName(baseName) });
+      }
       continue;
     }
 

@@ -520,8 +520,7 @@ export class SyncService {
     const pendingBefore = this.db.listPendingExportVideos(5000);
     const reconciliation = reconcilePendingAgainstDevice(pendingBefore, device.mountPath);
     const reconciledIds = [
-      ...reconciliation.exactMatches.map((match) => match.item.id),
-      ...reconciliation.normalizedMatches.map((match) => match.item.id)
+      ...reconciliation.exactMatches.map((match) => match.item.id)
     ];
 
     if (reconciledIds.length > 0) {

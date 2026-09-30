@@ -24,8 +24,7 @@ if (!device.connected || !device.mountPath) {
 const pending = db.listPendingExportVideos(5000);
 const report = reconcilePendingAgainstDevice(pending, device.mountPath);
 const reconciledIds = [
-  ...report.exactMatches.map((match) => match.item.id),
-  ...report.normalizedMatches.map((match) => match.item.id)
+  ...report.exactMatches.map((match) => match.item.id)
 ];
 
 let dbResult = null;

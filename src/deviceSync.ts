@@ -13,6 +13,7 @@ import {
 import { basename, dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
+import { filesMatch } from "./fileVerification.js";
 import { config } from "./config.js";
 import type { DeviceStatus, PendingExportItem } from "./types.js";
 
@@ -190,7 +191,7 @@ export class DeviceSyncService {
         }
         if (existsSync(targetPath)) {
           const targetSize = statSync(targetPath).size;
-          if (sourceSize === targetSize) {
+          if (sourceSize === targetSize && filesMatch(item.local_path, targetPath)) {
             if (config.isDemo) {
               await sleep(120);
             }
@@ -210,8 +211,8 @@ export class DeviceSyncService {
         });
         await pipeline(createReadStream(item.local_path), progressTap, createWriteStream(tempTargetPath));
         const copiedSize = statSync(tempTargetPath).size;
-        if (sourceSize !== copiedSize) {
-          throw new Error(`Copied file size mismatch: source=${sourceSize} target=${copiedSize}`);
+        if (sourceSize !== copiedSize || !filesMatch(item.local_path, tempTargetPath)) {
+          throw new Error(`Copied file verification failed: source=${sourceSize} target=${copiedSize}`);
         }
         renameSync(tempTargetPath, targetPath);
         outcome.copied.push(item);
