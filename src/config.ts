@@ -25,7 +25,7 @@ export const config = {
   mode,
   isDemo: mode === "demo",
   rootDir,
-  host: process.env.HOST ?? "127.0.0.1",
+  host: process.env.HOST ?? "0.0.0.0",
   port: Number(process.env.PORT ?? 3000),
   deviceMountPath: process.env.DEVICE_MOUNT_PATH?.trim() || (mode === "demo" ? demoPlayerDir : null),
   deviceVolumeName: process.env.DEVICE_VOLUME_NAME?.trim() || "AGP-A02T",

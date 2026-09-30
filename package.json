@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "./scripts/dev.sh",
     "dev:server": "./scripts/dev-server.sh",
-    "dev:client": "vite",
     "build": "./scripts/build.sh",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.json",

@@ -7,6 +7,7 @@ Local Audio Device Sync is a local-first React/TypeScript app with an Express AP
 - The Express server starts from `src/index.ts`, initializes SQLite, reconciles interrupted runs, seeds demo data when `DEMO_MODE=1`, and serves the SPA/API.
 - The React SPA uses a small Elm-style update loop in `src/client/app.tsx` and `src/client/screens.tsx`.
 - Live dashboard updates use server-sent events from `/api/events`.
+- Development embeds Vite middleware and hot reload in the Express HTTP server; browser assets and API calls share one origin and port.
 - Build output places server code in `dist/` and client assets in `dist/public/`.
 
 Node is pinned through asdf in `.tool-versions`. Homebrew installs yt-dlp (with Deno) and FFmpeg/FFprobe through `Brewfile`; `npm run doctor` checks runnable binaries and MP3 encoding support.

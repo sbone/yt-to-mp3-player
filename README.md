@@ -78,7 +78,7 @@ Normal mode requires Deno, yt-dlp, FFmpeg, and FFprobe in `PATH` in addition to 
 npm run dev
 ```
 
-Open `http://127.0.0.1:3000`. The development command starts the Express backend on port `3000` and the Vite client on port `5173`.
+Open `http://127.0.0.1:3000`. Development uses one server on port `3000`: Express serves the API and Vite serves client assets and hot reload through the same port.
 
 Useful commands:
 
@@ -174,7 +174,18 @@ Codex helped turn an existing personal utility into a portfolio-ready product by
 
 ## Remote Access
 
-Keep the app bound to localhost, then expose it through Tailscale:
+The app binds to `0.0.0.0` by default, accepting connections on all IPv4 interfaces. On the M1 Pro, open `http://localhost:3000`; from another computer, open `http://<m1proIP>:3000`. Development assets, API calls, and hot reload follow the address in your browser. There is no separate Vite port to expose.
+
+`0.0.0.0` is a listening address, not a browser destination. `localhost` always refers to the computer running the browser. The app has no authentication, so use this binding on trusted networks.
+
+Override the port or restrict listening to localhost when needed:
+
+```bash
+PORT=4000 npm run dev
+HOST=127.0.0.1 npm run dev
+```
+
+The same `HOST` and `PORT` settings apply to `npm run start`. For Tailscale Serve, start the app with `HOST=127.0.0.1`, then expose it:
 
 ```bash
 tailscale serve localhost:3000
