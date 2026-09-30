@@ -14,6 +14,7 @@
     "test": "npm run test:unit && npm run test:smoke",
     "test:unit": "playwright test --config playwright.unit.config.ts",
     "test:smoke": "playwright test",
+    "test:production": "PLAYWRIGHT_PRODUCTION=1 playwright test",
     "screenshots": "PLAYWRIGHT_SCREENSHOTS=1 playwright test tests/screenshots.spec.ts",
     "demo": "DEMO_MODE=1 ./scripts/dev.sh",
     "doctor": "./scripts/doctor.sh",
