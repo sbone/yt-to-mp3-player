@@ -12,12 +12,16 @@ import type {
 } from "./types.js";
 
 export class AppDb {
-  private readonly db: Database;
+  private readonly db: Database.Database;
 
   constructor(path = config.dbPath) {
     this.db = new Database(path);
     this.db.pragma("journal_mode = WAL");
     this.migrate();
+  }
+
+  close(): void {
+    this.db.close();
   }
 
   private migrate(): void {

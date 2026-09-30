@@ -27,6 +27,7 @@ test.beforeEach(() => {
 });
 
 test.afterEach(() => {
+  db.close();
   Object.assign(config, originalConfig);
   rmSync(root, { recursive: true, force: true });
 });

@@ -34,7 +34,7 @@ In demo mode:
 
 ## Runtime Setup
 
-The project pins Node.js 22.14.0 and Deno 2.6.3 in `.tool-versions`. Node runs the app and build tools. Deno is yt-dlp's recommended runtime for YouTube's JavaScript challenges and is enabled by yt-dlp by default.
+The project pins Node.js 22.23.3 and Deno 2.6.3 in `.tool-versions`. Node runs the app and build tools. Deno is yt-dlp's recommended runtime for YouTube's JavaScript challenges and is enabled by yt-dlp by default.
 
 On macOS, install the system tools and register the asdf plugins once:
 

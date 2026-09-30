@@ -21,7 +21,7 @@ export default defineConfig({
     outDir: "dist/public",
     emptyOutDir: false,
     rollupOptions: {
-      input: resolve(__dirname, "src/client/main.tsx"),
+      input: resolve(import.meta.dirname, "src/client/main.tsx"),
       output: {
         entryFileNames: "client.js",
         chunkFileNames: "chunks/[name].js",
