@@ -227,8 +227,6 @@ export async function downloadVideo(
     "--add-metadata",
     "--postprocessor-args",
     "ffmpeg:-id3v2_version 3",
-    "--download-archive",
-    config.archivePath,
     "--write-info-json",
     "--print",
     "after_move:filepath",

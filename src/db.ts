@@ -14,8 +14,8 @@ import type {
 export class AppDb {
   private readonly db: Database;
 
-  constructor() {
-    this.db = new Database(config.dbPath);
+  constructor(path = config.dbPath) {
+    this.db = new Database(path);
     this.db.pragma("journal_mode = WAL");
     this.migrate();
   }
@@ -670,6 +670,14 @@ export class AppDb {
     });
 
     return tx();
+  }
+
+  listRetryableVideos(channelId: number): DiscoveredVideo[] {
+    return this.db.prepare(`select youtube_video_id as youtubeVideoId,
+      title, upload_date as uploadDate, duration_seconds as durationSeconds,
+      webpage_url as webpageUrl, thumbnail_url as thumbnailUrl, null as channelName
+      from videos where channel_id = ? and status in ('discovered', 'failed', 'skipped')
+      order by id`).all(channelId) as DiscoveredVideo[];
   }
 
   markVideosForRedownload(videoIds: number[]): number {
