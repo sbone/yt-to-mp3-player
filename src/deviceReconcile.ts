@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { filesMatch } from "./fileVerification.js";
 import type { PendingExportItem } from "./types.js";
@@ -96,7 +96,11 @@ export function reconcilePendingAgainstDevice(pending: PendingExportItem[], moun
     const related = exactCandidates.filter((path) => basename(dirname(path)) === basename(dirname(item.local_path)));
     const candidatesByName = related.length > 0 ? related : exactCandidates;
     const exactPath = candidatesByName.length === 1 ? candidatesByName[0] : undefined;
-    if (exactPath && (!existsSync(item.local_path) || filesMatch(item.local_path, exactPath))) {
+    const exactSize = exactPath ? statSync(exactPath).size : 0;
+    const verified = exactPath && (existsSync(item.local_path)
+      ? filesMatch(item.local_path, exactPath)
+      : exactSize > 0 && (item.file_size_bytes == null || exactSize === item.file_size_bytes));
+    if (exactPath && verified) {
       exactMatches.push({ item, devicePath: exactPath, matchType: "exact" });
       continue;
     }

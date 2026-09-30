@@ -562,6 +562,7 @@ export class AppDb {
 
   listPendingExportVideos(limit = 500): Array<{
     id: number;
+    file_size_bytes: number | null;
     title: string;
     local_path: string;
     downloaded_at: string | null;
@@ -572,6 +573,7 @@ export class AppDb {
         `select
           v.id,
           v.title,
+          v.file_size_bytes,
           v.local_path,
           v.downloaded_at,
           c.handle as channel_handle
@@ -586,6 +588,7 @@ export class AppDb {
       )
       .all(limit) as Array<{
       id: number;
+      file_size_bytes: number | null;
       title: string;
       local_path: string;
       downloaded_at: string | null;
@@ -595,6 +598,7 @@ export class AppDb {
 
   listExportedVideos(limit = 500): Array<{
     id: number;
+    file_size_bytes: number | null;
     title: string;
     local_path: string;
     downloaded_at: string | null;
@@ -605,6 +609,7 @@ export class AppDb {
         `select
           v.id,
           v.title,
+          v.file_size_bytes,
           v.local_path,
           v.downloaded_at,
           c.handle as channel_handle
@@ -618,6 +623,7 @@ export class AppDb {
       )
       .all(limit) as Array<{
       id: number;
+      file_size_bytes: number | null;
       title: string;
       local_path: string;
       downloaded_at: string | null;

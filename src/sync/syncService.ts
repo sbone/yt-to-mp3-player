@@ -639,6 +639,7 @@ export class SyncService {
       }
     });
     const exportedIds = [...copyOutcome.copied, ...copyOutcome.alreadyPresent].map((item) => item.id);
+    this.db.markVideosForRedownload(copyOutcome.missingSource.map((item) => item.id));
     if (exportedIds.length > 0) {
       this.db.markVideosAsExported(
         exportedIds,

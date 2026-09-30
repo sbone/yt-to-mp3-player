@@ -35,21 +35,24 @@ The database intentionally keeps the original `youtube_video_id` naming for comp
 
 - Normal mode discovers a mounted player from `DEVICE_MOUNT_PATH`, `DEVICE_VOLUME_NAME`, or `/Volumes`.
 - Demo mode points the same service at `data/demo/player`.
-- Copying writes `<target>.part`, verifies file size, then renames into place.
-- Existing matching files are treated as already exported.
+- Copying writes `<target>.part`, verifies file size and SHA-256 contents, then renames into place.
+- Exact filename matches are checked for duplicate names and verified against local contents before being treated as exported. Fuzzy matches are suggestions only.
+- After local cache deletion, stored file sizes detect truncated player files.
 - Verified exports delete the local source copy; SQLite retains its path and export history.
 
 ## Recovery Behavior
 
 - Runs left as `running` are marked failed on startup with an interruption event.
-- Exported files missing from the player are reset for download.
-- Missing exported files are reset to `discovered` so the next library refresh can download them again.
+- Missing local audio and missing or truncated player exports are reset to `discovered`.
+- SQLite controls download eligibility; the yt-dlp download archive no longer blocks recovery.
+- Refresh checks the full discovered feed and retries stored pending items absent from that feed.
+- Combined refresh-and-sync jobs reserve both operations and export after refresh completes.
 - Cookie/auth failures are tracked as `cookie_blocked` so they do not disappear into generic failures.
 - The dashboard exposes safe-to-disconnect, device-readiness, pending export, and recent events as first-class state.
 
 ## Tests
 
-Playwright runs with `DEMO_MODE=1 DEMO_RESET=1`, so tests exercise the app without external binaries or real mounted devices.
+`npm run test:unit` runs API, reconciliation, and service regression tests without a web server. Browser tests run with `DEMO_MODE=1 DEMO_RESET=1`; `npm run test:production` runs the same smoke suite against built assets. All use fake media and temporary or demo devices.
 
 Covered scenarios include:
 
