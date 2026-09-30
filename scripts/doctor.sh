@@ -49,7 +49,10 @@ elif [ "$NODE_AVAILABLE" -eq 1 ]; then
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-require("better-sqlite3");
+const Database = require("better-sqlite3");
+const db = new Database(":memory:");
+db.prepare("select 1").get();
+db.close();
 console.log("better-sqlite3: ok");
 EOF
   then
