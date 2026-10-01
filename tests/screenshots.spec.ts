@@ -34,7 +34,7 @@ test.describe("portfolio screenshots", () => {
     await page.goto("/");
     await page.getByRole("button", { name: "Screenshot" }).click();
     await page.getByRole("button", { name: "Refresh Library", exact: true }).click();
-    await expect(page.getByText(/Downloading Demo live item/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("progressbar", { name: "Download progress" })).toBeVisible({ timeout: 10_000 });
     await capture(page, "03-refresh-progress");
 
     await expect

@@ -182,11 +182,72 @@
   }
 
   .dashboard-live-card {
-    height: 100%;
     min-width: 0;
     display: grid;
     gap: 0.75rem;
     align-content: start;
+  }
+
+  .activity-status {
+    color: #a8cfb0;
+    margin: 0;
+  }
+
+  .activity-job {
+    padding-block: 0.8rem;
+    border-top: 1px solid rgb(127 217 149 / 0.25);
+  }
+
+  .activity-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #a2efb2;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .activity-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: #a2efb2;
+    box-shadow: 0 0 0 4px rgb(127 217 149 / 0.12);
+    flex: none;
+  }
+
+  .activity-title {
+    font-size: 1.2rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    margin-block: 0.6rem;
+  }
+
+  .activity-history {
+    border-top: 1px solid rgb(127 217 149 / 0.25);
+    padding-block: 0.75rem;
+  }
+
+  .activity-history summary, .dashboard-stack summary {
+    cursor: pointer;
+  }
+
+  .activity-history .terminal {
+    max-height: 18rem;
+  }
+
+  .progress-indeterminate {
+    animation: activity-progress 1.8s ease-in-out infinite alternate;
+  }
+
+  @keyframes activity-progress {
+    from { transform: translateX(0); }
+    to { transform: translateX(185%); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .progress-indeterminate { animation: none; }
   }
 
   .detail-shell {

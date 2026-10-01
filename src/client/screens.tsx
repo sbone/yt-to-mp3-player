@@ -476,15 +476,15 @@ function progressPercent(completed: number, total: number): number {
   return clampPercent((completed / total) * 100);
 }
 
-function renderProgressBar(label: ReactElement | string, percent: number, details: string): ReactElement {
+function renderProgressBar(label: ReactElement | string, percent: number | null, details: string): ReactElement {
   return (
     <div className="progress-block">
       <div className="progress-label-row">
         <span className="progress-label">{label}</span>
-        <span className="progress-value">{Math.round(percent)}%</span>
+        <span className="progress-value">{percent === null ? "In progress" : `${Math.round(percent)}%`}</span>
       </div>
-      <div className="progress-track" aria-hidden="true">
-        <div className="progress-fill" style={{ width: `${percent}%` }} />
+      <div className="progress-track" role="progressbar" aria-label={typeof label === "string" ? label : "Transfer progress"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent ?? undefined}>
+        <div className={`progress-fill${percent === null ? " progress-indeterminate" : ""}`} style={{ width: percent === null ? "35%" : `${percent}%` }} />
       </div>
       <p className="small mono progress-details">{details}</p>
     </div>
@@ -699,6 +699,8 @@ export function renderDashboardScreen(
   const libraryCurrentPercent =
     syncState?.library.currentItemPercent ?? progressPercent(libraryItemBytesCopied, libraryItemBytesTotal ?? 0);
 
+  const currentSource = livePayload?.events.slice().reverse().find((event) => event.run_id === syncState?.library.runId && event.channel_handle)?.channel_handle;
+
   return (
     <>
       <section className="hero" {...{ "box-": "double" }}>
@@ -754,20 +756,6 @@ export function renderDashboardScreen(
         {renderActionState(model.syncAction)}
         {renderActionState(model.syncAndExportAction)}
         {renderActionState(model.retryAction)}
-        {syncState?.library.running && syncState.library.currentItemTitle && libraryItemBytesTotal
-          ? renderProgressBar(
-              `Downloading ${syncState.library.currentItemTitle}`,
-              libraryCurrentPercent,
-              [
-                `${fmtBytes(libraryItemBytesCopied)} / ${fmtBytes(libraryItemBytesTotal)}`,
-                syncState.library.currentItemSpeed ? `at ${syncState.library.currentItemSpeed}` : null,
-                syncState.library.currentItemEta ? `ETA ${syncState.library.currentItemEta}` : null,
-                syncState.library.currentItemPhase === "postprocessing" ? "post-processing" : null
-              ]
-                .filter((part): part is string => Boolean(part))
-                .join(" · ")
-            )
-          : null}
         {renderRemoteError(model.data.error)}
       </section>
 
@@ -805,22 +793,6 @@ export function renderDashboardScreen(
               <strong>remaining={syncState?.player.remaining ?? 0}</strong>
               {syncState?.player.currentItemTitle ? <> , current={sensitiveText(syncState.player.currentItemTitle, obfuscateSensitive)}</> : ""}
             </p>
-            {syncState?.player.running && (syncState.player.totalItems ?? 0) > 0
-              ? renderProgressBar(
-                  "Overall player sync",
-                  overallPercent,
-                  `${fmtBytes(overallCompletedBytes)} / ${fmtBytes(syncState.player.totalBytes ?? 0)}`
-                )
-              : null}
-            {syncState?.player.running && syncState.player.currentItemTitle && (syncState.player.currentItemBytesTotal ?? 0) > 0
-              ? renderProgressBar(
-                  <>
-                    Copying {sensitiveText(syncState.player.currentItemTitle, obfuscateSensitive)}
-                  </>,
-                  currentFilePercent,
-                  `${fmtBytes(currentItemBytesCopied)} / ${fmtBytes(currentItemBytesTotal)}`
-                )
-              : null}
             {nextPendingTrack ? (
               <p className="small">
                 Next up: <strong>{sensitiveText(nextPendingTrack.title, obfuscateSensitive)}</strong>
@@ -832,8 +804,8 @@ export function renderDashboardScreen(
             )}
           </section>
 
-          <section className="card" {...{ "box-": "round" }}>
-            <h2>Sync State</h2>
+          <details className="card" {...{ "box-": "round" }}>
+            <summary>Sync details</summary>
             <p className="mono">library: {syncState?.library.running ? "running" : "idle"}</p>
             <p className="mono">library run: {syncState?.library.runId ?? "n/a"}</p>
             <p className="mono">library scope: {syncState?.library.scope ?? "n/a"}</p>
@@ -848,14 +820,44 @@ export function renderDashboardScreen(
               {syncState?.player.failed ?? 0} remaining={syncState?.player.remaining ?? 0}
             </p>
             <p className="mono">player current: {syncState?.player.currentItemTitle ? sensitiveText(syncState.player.currentItemTitle, obfuscateSensitive) : "idle"}</p>
-          </section>
+          </details>
         </div>
 
         <section className="card dashboard-live-card" {...{ "box-": "round" }}>
           <h2>Live Activity</h2>
-          <p className="small">Live updates stream over SSE while this page is open.</p>
+          <p className="activity-status">{libraryActive || playerActive ? "Working now" : "Ready when you are"}</p>
           {renderRemoteError(model.live.error)}
-          {renderTerminal(livePayload, obfuscateSensitive)}
+          {libraryActive && syncState ? (
+            <div className="activity-job">
+              <p className="activity-label"><span className="activity-dot" />Library refresh</p>
+              <h3 className="activity-title">{syncState.library.currentItemTitle
+                ? <>{syncState.library.currentItemPhase === "postprocessing" ? "Preparing audio for" : "Downloading"} {sensitiveText(syncState.library.currentItemTitle, obfuscateSensitive)}</>
+                : "Checking sources for tracks…"}</h3>
+              {currentSource ? <p className="small">Source: {sensitiveText(channelLabel(currentSource), obfuscateSensitive)}</p> : null}
+              {renderProgressBar(
+                syncState.library.currentItemPhase === "postprocessing" ? "Preparing MP3 and metadata" : syncState.library.currentItemTitle ? "Download progress" : "Discovering tracks",
+                syncState.library.currentItemPhase === "postprocessing" || !syncState.library.currentItemTitle ? null : syncState.library.currentItemPercent ?? (libraryItemBytesTotal ? libraryCurrentPercent : null),
+                [libraryItemBytesTotal ? `${fmtBytes(libraryItemBytesCopied)} / ${fmtBytes(libraryItemBytesTotal)}` : null,
+                  syncState.library.currentItemSpeed ? `at ${syncState.library.currentItemSpeed}` : null,
+                  syncState.library.currentItemEta ? `ETA ${syncState.library.currentItemEta}` : null].filter(Boolean).join(" · ")
+              )}
+            </div>
+          ) : null}
+          {playerActive && syncState ? (
+            <div className="activity-job">
+              <p className="activity-label"><span className="activity-dot" />Player sync{syncState.player.targetVolume ? <> · {sensitiveText(syncState.player.targetVolume, obfuscateSensitive)}</> : ""}</p>
+              <h3 className="activity-title">{syncState.player.currentItemTitle ? <>Copying {sensitiveText(syncState.player.currentItemTitle, obfuscateSensitive)}</> : "Preparing player sync…"}</h3>
+              <p className="small">Keep the player connected until copying finishes.</p>
+              {syncState.player.currentItemTitle ? renderProgressBar("Current file", currentItemBytesTotal ? currentFilePercent : null, currentItemBytesTotal ? `${fmtBytes(currentItemBytesCopied)} / ${fmtBytes(currentItemBytesTotal)}` : "Checking file…") : null}
+              {renderProgressBar("Overall player sync", syncState.player.totalBytes > 0 ? overallPercent : null, `${syncState.player.processedItems} of ${syncState.player.totalItems} tracks processed · ${syncState.player.remaining} remaining`)}
+              {syncState.player.nextPendingItem ? <p className="small">Up next: <strong>{sensitiveText(syncState.player.nextPendingItem.title, obfuscateSensitive)}</strong></p> : null}
+            </div>
+          ) : null}
+          {!libraryActive && !playerActive ? <p className="small">Refresh your library to find new tracks, or sync downloaded audio to your player.</p> : null}
+          <details className="activity-history">
+            <summary>Recent activity</summary>
+            {renderTerminal(livePayload, obfuscateSensitive)}
+          </details>
         </section>
       </section>
 

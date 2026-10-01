@@ -244,3 +244,29 @@ test("development assets and hot reload use the app origin", async ({ page, base
   expect(assets).toEqual(expect.arrayContaining([`${baseURL}/@vite/client`, `${baseURL}/src/client/main.tsx`]));
   await expect.poll(() => sockets.some((url) => url.startsWith(baseURL!.replace("http:", "ws:") + "/"))).toBe(true);
 });
+
+test("live activity focuses both operations, handles unknown progress, and redacts titles", async ({ page, request }) => {
+  const live = await (await request.get("/api/live")).json();
+  live.state.library = { ...live.state.library, running: true, runId: 999, currentItemTitle: "Private library track", currentItemPhase: "postprocessing", currentItemPercent: null, currentItemTotalBytes: null };
+  live.state.player = { ...live.state.player, running: true, currentItemTitle: "Private player track", targetVolume: "TEST-PLAYER", currentItemBytesCopied: 500, currentItemBytesTotal: 1000, totalBytes: 4000, completedBytes: 1000, totalItems: 4, processedItems: 1, remaining: 3, nextPendingItem: { title: "Private next track" } };
+  live.state.notifications = [];
+  await page.route("**/api/live?*", (route) => route.fulfill({ json: live }));
+  await page.route("**/api/events", (route) => route.fulfill({ contentType: "text/event-stream", body: `event: live\ndata: ${JSON.stringify(live)}\n\n` }));
+  await page.goto("/");
+  const panel = page.locator(".dashboard-live-card");
+  await expect(panel.getByRole("heading", { name: "Preparing audio for Private library track" })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: "Copying Private player track" })).toBeVisible();
+  await expect(panel.getByRole("progressbar", { name: "Preparing MP3 and metadata" })).not.toHaveAttribute("aria-valuenow");
+  await expect(panel.getByRole("progressbar", { name: "Current file" })).toHaveAttribute("aria-valuenow", "50");
+  await expect(panel.getByText("Private next track", { exact: true })).toBeVisible();
+  await expect(panel.locator(".terminal")).not.toBeVisible();
+  await panel.getByText("Recent activity", { exact: true }).click();
+  await expect(panel.locator(".terminal")).toBeVisible();
+  await page.getByRole("button", { name: "Screenshot", exact: true }).click();
+  await expect(panel.getByText("Private library track", { exact: true })).toHaveClass(/sensitive-text-redacted/);
+  await expect(panel.getByText("Private player track", { exact: true })).toHaveClass(/sensitive-text-redacted/);
+  await expect(panel.getByText("Private next track", { exact: true })).toHaveClass(/sensitive-text-redacted/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const bounds = await panel.boundingBox();
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+});
