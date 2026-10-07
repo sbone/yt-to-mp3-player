@@ -27,8 +27,19 @@ export interface DeviceReconcileReport {
   unmatched: ReconcileUnmatched[];
 }
 
-async function walkAudioFiles(root: string): Promise<string[]> {
+export interface DeviceReconcileProgress {
+  processed: number;
+  total: number;
+  exactPath: string | null;
+}
+
+export interface DeviceReconcileOptions {
+  verifyContents?: boolean;
+}
+
+async function walkAudioFiles(root: string, onDirectory?: (path: string) => void): Promise<string[]> {
   const out: string[] = [];
+  onDirectory?.(root);
   for (const entry of await readdir(root, { withFileTypes: true })) {
     if (entry.name.startsWith(".")) {
       continue;
@@ -36,7 +47,7 @@ async function walkAudioFiles(root: string): Promise<string[]> {
 
     const fullPath = join(root, entry.name);
     if (entry.isDirectory()) {
-      out.push(...await walkAudioFiles(fullPath));
+      out.push(...await walkAudioFiles(fullPath, onDirectory));
       continue;
     }
 
@@ -69,8 +80,15 @@ function folderLooksRelated(devicePath: string, localPath: string): boolean {
   return deviceFolder.includes(localFolder) || localFolder.includes(deviceFolder);
 }
 
-export async function reconcilePendingAgainstDevice(pending: PendingExportItem[], mountPath: string): Promise<DeviceReconcileReport> {
-  const deviceFiles = await walkAudioFiles(mountPath);
+export async function reconcilePendingAgainstDevice(
+  pending: PendingExportItem[],
+  mountPath: string,
+  onDirectory?: (path: string) => void,
+  onProgress?: (progress: DeviceReconcileProgress) => void,
+  options: DeviceReconcileOptions = {}
+): Promise<DeviceReconcileReport> {
+  const deviceFiles = await walkAudioFiles(mountPath, onDirectory);
+  onProgress?.({ processed: 0, total: pending.length, exactPath: null });
   const exactByBaseName = new Map<string, string[]>();
   for (const path of deviceFiles) {
     const key = basename(path);
@@ -96,11 +114,15 @@ export async function reconcilePendingAgainstDevice(pending: PendingExportItem[]
     const related = exactCandidates.filter((path) => basename(dirname(path)) === basename(dirname(item.local_path)));
     const candidatesByName = related.length > 0 ? related : exactCandidates;
     const exactPath = candidatesByName.length === 1 ? candidatesByName[0] : undefined;
-    const exactSize = exactPath ? (await stat(exactPath)).size : 0;
+    onProgress?.({ processed: exactMatches.length + normalizedMatches.length + ambiguous.length + unmatched.length, total: pending.length, exactPath: exactPath ?? null });
+    let exactSize = 0;
     let verified = false;
     if (exactPath) {
       try {
-        verified = await filesMatch(item.local_path, exactPath);
+        exactSize = (await stat(exactPath)).size;
+        verified = options.verifyContents === false
+          ? exactSize > 0 && (item.file_size_bytes == null || exactSize === item.file_size_bytes)
+          : await filesMatch(item.local_path, exactPath);
       } catch {
         verified = exactSize > 0 && (item.file_size_bytes == null || exactSize === item.file_size_bytes);
       }

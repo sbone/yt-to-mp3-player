@@ -508,7 +508,11 @@ export class SyncService {
 
   private async exportPendingToDevice(runId: number, note: string | null = null): Promise<string> {
     this.db.reconcileChannelSources(loadChannelSources());
+    this.logger.info(`run=${runId} device export status probe started`);
     const device = await this.deviceSyncService.getStatus();
+    this.logger.info(
+      `run=${runId} device export status probe finished connected=${device.connected} writable=${device.writable} mount=${device.mountPath ?? "none"} reason=${device.reason ?? "none"}`
+    );
     if (!device.connected || !device.mountPath) {
       const message = `device export skipped: ${device.reason ?? "device not connected"}`;
       this.logger.warn(`run=${runId} ${message}`);
@@ -521,7 +525,25 @@ export class SyncService {
     }
 
     const exportedBefore = this.db.listExportedVideos(5000);
-    const exportedReconciliation = await reconcilePendingAgainstDevice(exportedBefore, device.mountPath);
+    this.logger.info(`run=${runId} device reconciliation exported scan started items=${exportedBefore.length}`);
+    const exportedReconciliation = await reconcilePendingAgainstDevice(
+      exportedBefore,
+      device.mountPath,
+      (path) => this.logger.info(`run=${runId} device reconciliation directory=${path}`),
+      (progress) => {
+        if (progress.processed === 0) {
+          this.logger.info(`run=${runId} device reconciliation exported matching started items=${progress.total}`);
+        } else if (progress.exactPath || progress.processed % 100 === 0) {
+          this.logger.info(
+            `run=${runId} device reconciliation exported matching progress=${progress.processed}/${progress.total}${progress.exactPath ? ` exact=${progress.exactPath}` : ""}`
+          );
+        }
+      },
+      { verifyContents: false }
+    );
+    this.logger.info(
+      `run=${runId} device reconciliation exported scan finished files=${exportedReconciliation.scannedDeviceFiles} exact=${exportedReconciliation.exactMatches.length} unmatched=${exportedReconciliation.unmatched.length}`
+    );
     const missingExportedIds = exportedReconciliation.unmatched.map((item) => item.item.id);
 
     if (missingExportedIds.length > 0) {
@@ -537,7 +559,24 @@ export class SyncService {
 
     ensureDemoPendingExport(this.db);
     const pendingBefore = this.db.listPendingExportVideos(5000);
-    const reconciliation = await reconcilePendingAgainstDevice(pendingBefore, device.mountPath);
+    this.logger.info(`run=${runId} device reconciliation pending scan started items=${pendingBefore.length}`);
+    const reconciliation = await reconcilePendingAgainstDevice(
+      pendingBefore,
+      device.mountPath,
+      (path) => this.logger.info(`run=${runId} device reconciliation directory=${path}`),
+      (progress) => {
+        if (progress.processed === 0) {
+          this.logger.info(`run=${runId} device reconciliation pending matching started items=${progress.total}`);
+        } else if (progress.exactPath || progress.processed % 100 === 0) {
+          this.logger.info(
+            `run=${runId} device reconciliation pending matching progress=${progress.processed}/${progress.total}${progress.exactPath ? ` exact=${progress.exactPath}` : ""}`
+          );
+        }
+      }
+    );
+    this.logger.info(
+      `run=${runId} device reconciliation pending scan finished files=${reconciliation.scannedDeviceFiles} exact=${reconciliation.exactMatches.length} normalized=${reconciliation.normalizedMatches.length} ambiguous=${reconciliation.ambiguous.length} unmatched=${reconciliation.unmatched.length}`
+    );
     const reconciledIds = [
       ...reconciliation.exactMatches.map((match) => match.item.id)
     ];
@@ -609,7 +648,13 @@ export class SyncService {
     }
 
     let completedPendingBytes = 0;
+    this.logger.info(`run=${runId} device copy started items=${pendingAfterReconcile.length}`);
     const copyOutcome = await this.deviceSyncService.syncPending(pendingAfterReconcile, (progress) => {
+      if (progress.event === "copying" && progress.currentItemBytesCopied === 0 && progress.currentItem) {
+        this.logger.info(
+          `run=${runId} device copy item started id=${progress.currentItem.id} title=${progress.currentItem.title} total_bytes=${progress.currentItemBytesTotal ?? "unknown"}`
+        );
+      }
       if (progress.event !== "copying" && progress.currentItem) {
         completedPendingBytes += progress.currentItemBytesTotal ?? safeFileSize(progress.currentItem);
       }
@@ -638,6 +683,9 @@ export class SyncService {
         this.db.addEvent(runId, level, `device-export-${progress.event}`, message);
       }
     });
+    this.logger.info(
+      `run=${runId} device copy finished copied=${copyOutcome.copied.length} existing=${copyOutcome.alreadyPresent.length} missing=${copyOutcome.missingSource.length} failed=${copyOutcome.failed.length}`
+    );
     const exportedIds = [...copyOutcome.copied, ...copyOutcome.alreadyPresent].map((item) => item.id);
     this.db.markVideosForRedownload(copyOutcome.missingSource.map((item) => item.id));
     if (exportedIds.length > 0) {
