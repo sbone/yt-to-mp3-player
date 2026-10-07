@@ -22,18 +22,18 @@ import { Logger } from "../logger.js";
 import { SyncService } from "../sync/syncService.js";
 import { renderSpaShell } from "./shell.js";
 
-function createDashboardPayload(
+async function createDashboardPayload(
   db: AppDb,
   syncService: SyncService,
   deviceSyncService: DeviceSyncService
-): DashboardDto {
+): Promise<DashboardDto> {
   db.reconcileChannelSources(loadChannelSources());
   const channels = db.listChannelsOverview();
   const runs = db.listRecentRuns(10);
   const cookieBlocked = db.listCookieBlockedVideos(50);
   const latestDeviceSync = db.getLatestDeviceSync();
   const pendingExport = db.listPendingExportVideos(400);
-  const deviceStatus = deviceSyncService.getStatus();
+  const deviceStatus = await deviceSyncService.getStatus();
   const deviceReadyForExport = deviceStatus.connected && Boolean(deviceStatus.mountPath) && deviceStatus.writable;
   const syncState = syncService.getState();
   const safeToDisconnect =
@@ -56,14 +56,14 @@ function createDashboardPayload(
   };
 }
 
-function createLivePayload(
+async function createLivePayload(
   db: AppDb,
   syncService: SyncService,
   deviceSyncService: DeviceSyncService,
   override?: Partial<Pick<LiveActivityDto, "deviceStatus" | "deviceReadyForExport" | "safeToDisconnect">>
-): LiveActivityDto {
+): Promise<LiveActivityDto> {
   db.reconcileChannelSources(loadChannelSources());
-  const deviceStatus = deviceSyncService.getStatus();
+  const deviceStatus = await deviceSyncService.getStatus();
   const state = syncService.getState();
   const latestDeviceSync = db.getLatestDeviceSync();
   const pendingExport = db.listPendingExportVideos(400);
@@ -102,12 +102,12 @@ function activeLibraryMessage(syncService: SyncService): string {
   return "Library run already active.";
 }
 
-function activePlayerMessage(syncService: SyncService, deviceSyncService: DeviceSyncService): string {
+async function activePlayerMessage(syncService: SyncService, deviceSyncService: DeviceSyncService): Promise<string> {
   const player = syncService.getState().player;
   if (player.running) {
     return `Player sync already active${player.targetVolume ? ` for ${player.targetVolume}` : ""}.`;
   }
-  const deviceStatus = deviceSyncService.getStatus();
+  const deviceStatus = await deviceSyncService.getStatus();
   return deviceStatus.reason ? `Player sync unavailable: ${deviceStatus.reason}.` : "Player sync unavailable.";
 }
 
@@ -137,8 +137,8 @@ export function createServer(
     app.use("/assets", express.static(publicAssetPath));
   }
 
-  app.get("/api/dashboard", setNoCacheHeaders, (_req, res) => {
-    res.json(createDashboardPayload(db, syncService, deviceSyncService));
+  app.get("/api/dashboard", setNoCacheHeaders, async (_req, res, next) => {
+    try { res.json(await createDashboardPayload(db, syncService, deviceSyncService)); } catch (error) { next(error); }
   });
 
   app.get("/api/channels", (_req, res) => {
@@ -230,18 +230,20 @@ export function createServer(
     res.json(payload);
   });
 
-  app.get("/api/live", setNoCacheHeaders, (_req, res) => {
-    res.json(createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined));
+  app.get("/api/live", setNoCacheHeaders, async (_req, res, next) => {
+    try { res.json(await createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined)); } catch (error) { next(error); }
   });
 
-  app.get("/api/events", setNoCacheHeaders, (_req, res) => {
+  app.get("/api/events", setNoCacheHeaders, async (_req, res, next) => {
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
     res.write("retry: 1000\n\n");
 
-    const payload = createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined);
-    res.write(`event: live\ndata: ${JSON.stringify(payload)}\n\n`);
+    try {
+      const payload = await createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined);
+      res.write(`event: live\ndata: ${JSON.stringify(payload)}\n\n`);
+    } catch (error) { next(error); return; }
     sseClients.add(res);
 
     const keepAlive = setInterval(() => {
@@ -256,21 +258,23 @@ export function createServer(
   });
 
   if (process.env.ENABLE_TEST_API === "1") {
-    app.post("/api/debug/live", (req, res) => {
-      const current = createLivePayload(db, syncService, deviceSyncService);
+    app.post("/api/debug/live", async (req, res, next) => {
+      try {
+      const current = await createLivePayload(db, syncService, deviceSyncService);
       const body = req.body as Partial<Pick<LiveActivityDto, "deviceStatus" | "deviceReadyForExport" | "safeToDisconnect">>;
       liveOverride = {
         deviceStatus: body.deviceStatus ?? current.deviceStatus,
         deviceReadyForExport: body.deviceReadyForExport ?? current.deviceReadyForExport,
         safeToDisconnect: body.safeToDisconnect ?? current.safeToDisconnect
       };
-      const payload = createLivePayload(db, syncService, deviceSyncService, liveOverride);
+      const payload = await createLivePayload(db, syncService, deviceSyncService, liveOverride);
       lastLivePayloadJson = JSON.stringify(payload);
       const event = `event: live\ndata: ${JSON.stringify(payload)}\n\n`;
       for (const client of sseClients) {
         client.write(event);
       }
       res.json({ ok: true });
+      } catch (error) { next(error); }
     });
   }
 
@@ -286,8 +290,9 @@ export function createServer(
     );
   });
 
-  app.post("/api/sync-and-export", (_req, res) => {
-    const deviceStatus = deviceSyncService.getStatus();
+  app.post("/api/sync-and-export", async (_req, res, next) => {
+    try {
+    const deviceStatus = await deviceSyncService.getStatus();
     const deviceReadyForExport = deviceStatus.connected && Boolean(deviceStatus.mountPath) && deviceStatus.writable;
     if (!deviceReadyForExport) {
       const reason = deviceStatus.reason ?? "device is not writable";
@@ -303,7 +308,7 @@ export function createServer(
       return;
     }
 
-    const result = syncService.startSyncAllAndExport();
+    const result = await syncService.startSyncAllAndExport();
     const started = result.libraryStarted || result.playerStarted;
     logger.info(
       started
@@ -319,24 +324,27 @@ export function createServer(
         ? "Refresh + sync player started."
         : [
             !result.libraryStarted ? activeLibraryMessage(syncService) : null,
-            !result.playerStarted ? activePlayerMessage(syncService, deviceSyncService) : null
+            !result.playerStarted ? await activePlayerMessage(syncService, deviceSyncService) : null
           ]
             .filter((value): value is string => value !== null)
             .join(" ")
     };
     res.json(payload);
+    } catch (error) { next(error); }
   });
 
-  app.post("/api/device-sync/sync-player", (_req, res) => {
-    const started = syncService.startPlayerSync(null);
+  app.post("/api/device-sync/sync-player", async (_req, res, next) => {
+    try {
+    const started = await syncService.startPlayerSync(null);
     logger.info(started ? "manual player-sync triggered" : "player-sync request ignored");
     res.json(
       actionResponse(
         started,
-        started ? "Player sync started." : activePlayerMessage(syncService, deviceSyncService),
+        started ? "Player sync started." : await activePlayerMessage(syncService, deviceSyncService),
         started ? null : "player sync already active or device not ready"
       )
     );
+    } catch (error) { next(error); }
   });
 
   app.post("/api/channels/:handle/sync", (req, res) => {
@@ -374,8 +382,8 @@ export function createServer(
   app.get("/runs", serveShell);
   app.get("/runs/:runId", serveShell);
 
-  const publishIfChanged = (): void => {
-    const payload = createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined);
+  const publishIfChanged = async (): Promise<void> => {
+    const payload = await createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined);
     const nextJson = JSON.stringify(payload);
     if (nextJson === lastLivePayloadJson) {
       return;
@@ -387,8 +395,10 @@ export function createServer(
     }
   };
 
-  lastLivePayloadJson = JSON.stringify(createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined));
-  setInterval(publishIfChanged, 1000);
+  void createLivePayload(db, syncService, deviceSyncService, liveOverride ?? undefined).then((payload) => {
+    lastLivePayloadJson = JSON.stringify(payload);
+  });
+  setInterval(() => { void publishIfChanged().catch(() => undefined); }, 1000);
 
   return app;
 }

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { filesMatch } from "./fileVerification.js";
 import type { PendingExportItem } from "./types.js";
@@ -27,16 +27,16 @@ export interface DeviceReconcileReport {
   unmatched: ReconcileUnmatched[];
 }
 
-function walkAudioFiles(root: string): string[] {
+async function walkAudioFiles(root: string): Promise<string[]> {
   const out: string[] = [];
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
+  for (const entry of await readdir(root, { withFileTypes: true })) {
     if (entry.name.startsWith(".")) {
       continue;
     }
 
     const fullPath = join(root, entry.name);
     if (entry.isDirectory()) {
-      out.push(...walkAudioFiles(fullPath));
+      out.push(...await walkAudioFiles(fullPath));
       continue;
     }
 
@@ -69,8 +69,8 @@ function folderLooksRelated(devicePath: string, localPath: string): boolean {
   return deviceFolder.includes(localFolder) || localFolder.includes(deviceFolder);
 }
 
-export function reconcilePendingAgainstDevice(pending: PendingExportItem[], mountPath: string): DeviceReconcileReport {
-  const deviceFiles = walkAudioFiles(mountPath);
+export async function reconcilePendingAgainstDevice(pending: PendingExportItem[], mountPath: string): Promise<DeviceReconcileReport> {
+  const deviceFiles = await walkAudioFiles(mountPath);
   const exactByBaseName = new Map<string, string[]>();
   for (const path of deviceFiles) {
     const key = basename(path);
@@ -96,10 +96,15 @@ export function reconcilePendingAgainstDevice(pending: PendingExportItem[], moun
     const related = exactCandidates.filter((path) => basename(dirname(path)) === basename(dirname(item.local_path)));
     const candidatesByName = related.length > 0 ? related : exactCandidates;
     const exactPath = candidatesByName.length === 1 ? candidatesByName[0] : undefined;
-    const exactSize = exactPath ? statSync(exactPath).size : 0;
-    const verified = exactPath && (existsSync(item.local_path)
-      ? filesMatch(item.local_path, exactPath)
-      : exactSize > 0 && (item.file_size_bytes == null || exactSize === item.file_size_bytes));
+    const exactSize = exactPath ? (await stat(exactPath)).size : 0;
+    let verified = false;
+    if (exactPath) {
+      try {
+        verified = await filesMatch(item.local_path, exactPath);
+      } catch {
+        verified = exactSize > 0 && (item.file_size_bytes == null || exactSize === item.file_size_bytes);
+      }
+    }
     if (exactPath && verified) {
       exactMatches.push({ item, devicePath: exactPath, matchType: "exact" });
       continue;

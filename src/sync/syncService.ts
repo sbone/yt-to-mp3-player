@@ -130,11 +130,11 @@ export class SyncService {
     return true;
   }
 
-  startSyncAllAndExport(note: string | null = null): { libraryStarted: boolean; playerStarted: boolean } {
+  async startSyncAllAndExport(note: string | null = null): Promise<{ libraryStarted: boolean; playerStarted: boolean }> {
     if (this.state.library.running || this.state.player.running || this.combinedSyncRunning) {
       return { libraryStarted: false, playerStarted: false };
     }
-    const device = this.deviceSyncService.getStatus();
+    const device = await this.deviceSyncService.getStatus();
     if (!device.connected || !device.mountPath || !device.writable) {
       return { libraryStarted: false, playerStarted: false };
     }
@@ -160,15 +160,15 @@ export class SyncService {
     return true;
   }
 
-  startPlayerSync(note: string | null = null): boolean {
+  async startPlayerSync(note: string | null = null): Promise<boolean> {
     if (this.state.player.running || this.combinedSyncRunning) {
       return false;
     }
-    const device = this.deviceSyncService.getStatus();
+    const device = await this.deviceSyncService.getStatus();
     if (!device.connected || !device.mountPath || !device.writable) {
       return false;
     }
-    void this.syncPlayer(note);
+    void this.syncPlayer(note, device);
     return true;
   }
 
@@ -412,8 +412,8 @@ export class SyncService {
     }
   }
 
-  private async syncPlayer(note: string | null): Promise<void> {
-    const device = this.deviceSyncService.getStatus();
+  private async syncPlayer(note: string | null, knownDevice?: Awaited<ReturnType<DeviceSyncService["getStatus"]>>): Promise<void> {
+    const device = knownDevice ?? await this.deviceSyncService.getStatus();
     if (!device.connected || !device.mountPath || !device.writable) {
       return;
     }
@@ -508,7 +508,7 @@ export class SyncService {
 
   private async exportPendingToDevice(runId: number, note: string | null = null): Promise<string> {
     this.db.reconcileChannelSources(loadChannelSources());
-    const device = this.deviceSyncService.getStatus();
+    const device = await this.deviceSyncService.getStatus();
     if (!device.connected || !device.mountPath) {
       const message = `device export skipped: ${device.reason ?? "device not connected"}`;
       this.logger.warn(`run=${runId} ${message}`);
@@ -521,7 +521,7 @@ export class SyncService {
     }
 
     const exportedBefore = this.db.listExportedVideos(5000);
-    const exportedReconciliation = reconcilePendingAgainstDevice(exportedBefore, device.mountPath);
+    const exportedReconciliation = await reconcilePendingAgainstDevice(exportedBefore, device.mountPath);
     const missingExportedIds = exportedReconciliation.unmatched.map((item) => item.item.id);
 
     if (missingExportedIds.length > 0) {
@@ -537,7 +537,7 @@ export class SyncService {
 
     ensureDemoPendingExport(this.db);
     const pendingBefore = this.db.listPendingExportVideos(5000);
-    const reconciliation = reconcilePendingAgainstDevice(pendingBefore, device.mountPath);
+    const reconciliation = await reconcilePendingAgainstDevice(pendingBefore, device.mountPath);
     const reconciledIds = [
       ...reconciliation.exactMatches.map((match) => match.item.id)
     ];

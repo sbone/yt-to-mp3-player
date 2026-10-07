@@ -67,9 +67,9 @@ test("refresh retries older and absent recovery items beyond twenty known videos
 test("combined action exports newly downloaded audio and reserves both operations", async () => {
   const downloads: string[] = [];
   const service = new SyncService(db, new Logger(), new DeviceSyncService(), provider([video("new")], downloads));
-  expect(service.startSyncAllAndExport()).toEqual({ libraryStarted: true, playerStarted: true });
-  expect(service.startPlayerSync()).toBe(false);
-  expect(service.startSyncAllAndExport()).toEqual({ libraryStarted: false, playerStarted: false });
+  expect(await service.startSyncAllAndExport()).toEqual({ libraryStarted: true, playerStarted: true });
+  expect(await service.startPlayerSync()).toBe(false);
+  expect(await service.startSyncAllAndExport()).toEqual({ libraryStarted: false, playerStarted: false });
   await expect.poll(() => db.listExportedVideos().length).toBe(1);
   expect(readFileSync(join(config.deviceMountPath!, "cache", "new [new].mp3"), "utf8")).toBe("audio for new");
   expect(db.listPendingExportVideos()).toHaveLength(0);
@@ -105,7 +105,7 @@ test("player sync repairs corrupt audio and copies instead of trusting fuzzy mat
   writeFileSync(join(deviceFolder, "repair [repair].mp3"), "bad!");
   writeFileSync(join(deviceFolder, "Track.mp3"), "bad!");
   const service = new SyncService(db, new Logger(), new DeviceSyncService(), provider([], []));
-  expect(service.startPlayerSync()).toBe(true);
+  expect(await service.startPlayerSync()).toBe(true);
   await expect.poll(() => service.getState().player.running).toBe(false);
   expect(readFileSync(join(deviceFolder, "repair [repair].mp3"), "utf8")).toBe("good");
   expect(readFileSync(join(deviceFolder, "01 - Track [fuzzy].mp3"), "utf8")).toBe("good");
@@ -118,7 +118,7 @@ test("missing local audio is reported as an error and re-queued for download", a
   const record = db.upsertDiscoveredVideo(channel.id, video("missing"));
   db.markVideoDownloaded(record.id, join(config.downloadsDir, "missing.mp3"), 4);
   const service = new SyncService(db, new Logger(), new DeviceSyncService(), provider([], []));
-  expect(service.startPlayerSync()).toBe(true);
+  expect(await service.startPlayerSync()).toBe(true);
   await expect.poll(() => service.getState().player.running).toBe(false);
   expect(service.getState().player.lastFailedCount).toBe(1);
   expect(service.getState().notifications[0]?.status).toBe("partial");
@@ -135,7 +135,7 @@ test("truncated exported audio is re-queued after the local cache was removed", 
   mkdirSync(deviceFolder);
   writeFileSync(join(deviceFolder, "truncated [truncated].mp3"), "short");
   const service = new SyncService(db, new Logger(), new DeviceSyncService(), provider([], []));
-  expect(service.startPlayerSync()).toBe(true);
+  expect(await service.startPlayerSync()).toBe(true);
   await expect.poll(() => service.getState().player.running).toBe(false);
   expect(db.listExportedVideos()).toHaveLength(0);
   expect(db.listRetryableVideos(channel.id).map((item) => item.youtubeVideoId)).toEqual(["truncated"]);
