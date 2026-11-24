@@ -51,7 +51,7 @@ async function walkAudioFiles(root: string, onDirectory?: (path: string) => void
       continue;
     }
 
-    if (/\.(mp3|m4a|flac|wav)$/i.test(entry.name)) {
+    if (entry.isFile() && /\.(mp3|m4a|flac|wav)$/i.test(entry.name)) {
       out.push(fullPath);
     }
   }
@@ -124,7 +124,7 @@ export async function reconcilePendingAgainstDevice(
           ? exactSize > 0 && (item.file_size_bytes == null || exactSize === item.file_size_bytes)
           : await filesMatch(item.local_path, exactPath);
       } catch {
-        verified = exactSize > 0 && (item.file_size_bytes == null || exactSize === item.file_size_bytes);
+        verified = false;
       }
     }
     if (exactPath && verified) {

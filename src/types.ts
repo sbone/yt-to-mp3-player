@@ -85,7 +85,18 @@ export interface SyncNotification {
   details: string[];
 }
 
+export interface StationJob {
+  id: string | null;
+  action: "update" | "eject" | null;
+  finishedAt?: number;
+  phase: "idle" | "checking" | "copying" | "ejecting" | "ejected" | "failed";
+  copied: number;
+  total: number;
+  reason: string | null;
+}
+
 export interface SyncState {
+  station?: StationJob;
   library: LibrarySyncState;
   player: PlayerSyncState;
   notifications: SyncNotification[];

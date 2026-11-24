@@ -1,4 +1,5 @@
 import express from "express";
+import { validID } from "../stationVolume.js";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
@@ -33,9 +34,10 @@ async function createDashboardPayload(
   const cookieBlocked = db.listCookieBlockedVideos(50);
   const latestDeviceSync = db.getLatestDeviceSync();
   const pendingExport = db.listPendingExportVideos(400);
+  // A completed eject must be paired with a mount probe taken after its confirmation.
+  const syncState = syncService.getState();
   const deviceStatus = await deviceSyncService.getStatus();
   const deviceReadyForExport = deviceStatus.connected && Boolean(deviceStatus.mountPath) && deviceStatus.writable;
-  const syncState = syncService.getState();
   const safeToDisconnect =
     deviceStatus.connected &&
     !syncState.player.running &&
@@ -277,6 +279,22 @@ export function createServer(
       } catch (error) { next(error); }
     });
   }
+
+  app.post("/api/station/player", (req, res) => {
+    const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "");
+    const forwarded = Object.keys(req.headers).some(key => key === "forwarded" || key.startsWith("x-forwarded-"));
+    const host = /^(127\.0\.0\.1|localhost|\[::1\])(:[0-9]+)?$/.test(req.headers.host ?? "");
+    if (!local || !host || forwarded || req.headers.origin || !req.is("application/json")) {
+      res.sendStatus(403);
+      return;
+    }
+    const { action, id, volumeID } = req.body ?? {};
+    if (!(action === "eject" || action === "update") || !validID(id) || !validID(volumeID)) {
+      res.sendStatus(400);
+      return;
+    }
+    res.json({ started: syncService.startStation(action, id, volumeID) });
+  });
 
   app.post("/api/sync", (_req, res) => {
     const started = syncService.startSyncAll();

@@ -1,4 +1,5 @@
 import { AppDb } from "../db.js";
+import { StationVolume, updateStationTracks } from "../stationVolume.js";
 import { DeviceSyncService } from "../deviceSync.js";
 import { reconcilePendingAgainstDevice } from "../deviceReconcile.js";
 import { channelUrlForHandle, loadChannelSources } from "../channelSource.js";
@@ -9,6 +10,7 @@ import type {
   LibrarySyncState,
   PendingExportItem,
   PlayerSyncState,
+  StationJob,
   SyncCounters,
   SyncNotification,
   SyncState
@@ -87,6 +89,8 @@ function safeFileSize(item: PendingExportItem): number {
 export class SyncService {
   private combinedSyncRunning = false;
 
+  private station: StationJob = { id: null, action: null, phase: "idle", copied: 0, total: 0, reason: null };
+
   private state: SyncState = {
     library: { ...IDLE_LIBRARY_STATE },
     player: { ...IDLE_PLAYER_STATE },
@@ -104,6 +108,7 @@ export class SyncService {
     return {
       library: { ...this.state.library },
       player: { ...this.state.player },
+      station: { ...this.station },
       notifications: this.state.notifications.map((notification) => ({
         ...notification,
         details: [...notification.details]
@@ -134,14 +139,19 @@ export class SyncService {
     if (this.state.library.running || this.state.player.running || this.combinedSyncRunning) {
       return { libraryStarted: false, playerStarted: false };
     }
-    const device = await this.deviceSyncService.getStatus();
-    if (!device.connected || !device.mountPath || !device.writable) {
-      return { libraryStarted: false, playerStarted: false };
-    }
     this.combinedSyncRunning = true;
-    void this.syncAllAndExport(note);
-    // Both operations are accepted; the player operation waits for refresh.
-    return { libraryStarted: true, playerStarted: true };
+    try {
+      const device = await this.deviceSyncService.getStatus();
+      if (device.connected && device.mountPath && device.writable) {
+        void this.syncAllAndExport(note);
+        return { libraryStarted: true, playerStarted: true };
+      }
+    } catch (error) {
+      this.combinedSyncRunning = false;
+      throw error;
+    }
+    this.combinedSyncRunning = false;
+    return { libraryStarted: false, playerStarted: false };
   }
 
   startSyncChannel(handle: string): boolean {
@@ -161,15 +171,72 @@ export class SyncService {
   }
 
   async startPlayerSync(note: string | null = null): Promise<boolean> {
-    if (this.state.player.running || this.combinedSyncRunning) {
-      return false;
+    if (this.state.library.running || this.state.player.running || this.combinedSyncRunning) return false;
+    this.combinedSyncRunning = true;
+    try {
+      const device = await this.deviceSyncService.getStatus();
+      if (device.connected && device.mountPath && device.writable) {
+        void this.syncPlayer(note, device).finally(() => { this.combinedSyncRunning = false; });
+        return true;
+      }
+    } catch (error) {
+      this.combinedSyncRunning = false;
+      throw error;
     }
-    const device = await this.deviceSyncService.getStatus();
-    if (!device.connected || !device.mountPath || !device.writable) {
-      return false;
-    }
-    void this.syncPlayer(note, device);
+    this.combinedSyncRunning = false;
+    return false;
+  }
+
+  startStation(action: "update" | "eject", id: string, volumeID: string): boolean {
+    if (this.station.id === id) return true;
+    if (this.combinedSyncRunning || this.state.player.running || this.state.library.running) return false;
+    this.combinedSyncRunning = true;
+    this.station = { id, action, phase: action === "eject" ? "ejecting" : "checking", total: 0, copied: 0, reason: null };
+    this.setPlayerState({ ...IDLE_PLAYER_STATE, running: true, startedAt: new Date().toISOString() });
+    void this.stationOperation(action, volumeID);
     return true;
+  }
+
+  private async stationOperation(action: "update" | "eject", volumeID: string): Promise<void> {
+    let target: StationVolume | undefined;
+    let run: number | undefined;
+    try {
+      run = this.db.createRun("deck-" + action, null);
+      this.db.addEvent(run, "info", "station-start", `Deck ${action} requested, operation ${this.station.id}`);
+      const device = await this.deviceSyncService.getStatus();
+      target = await StationVolume.attach(device, volumeID);
+      let finishExport: (() => Promise<void>) | undefined;
+      if (action === "update") {
+        if (!device.writable) throw new Error("READ ONLY");
+        const sources = loadChannelSources();
+        if (!sources.length) throw new Error("NO SOURCES");
+        this.db.reconcileChannelSources(sources);
+        finishExport = await updateStationTracks(this.db, target, async () => {
+          if (await this.syncAll() !== "success") throw new Error("CHECK FAILED");
+        }, (copied, total) => {
+          this.station = { ...this.station, phase: "copying", copied, total };
+          this.setPlayerState({ copied, totalItems: total, processedItems: copied, remaining: total - copied });
+        });
+      }
+      this.station.phase = "ejecting";
+      await target.eject();
+      await finishExport?.();
+      this.db.finishRun(run, ZERO_COUNTERS, "success", `OS eject confirmed; transferred ${this.station.copied}`);
+      this.station = { ...this.station, phase: "ejected", finishedAt: Date.now() };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      const reason = ["NO SPACE", "NO SOURCES", "READ ONLY", "CONNECT PLAYER", "CHECK FAILED"].includes(detail)
+        ? detail : this.station.phase === "ejecting" ? "EJECT FAILED" : "UPDATE FAILED";
+      this.station = { ...this.station, phase: "failed", reason };
+      this.logger.warn(`station operation=${this.station.id} run=${run} failed: ${detail}`);
+      if (run !== undefined) this.db.finishRun(run, ZERO_COUNTERS, "failed", reason);
+    } finally {
+      try { await target?.close(); }
+      finally {
+        this.setPlayerState({ running: false, lastFailedCount: this.station.phase === "failed" ? 1 : 0 });
+        this.combinedSyncRunning = false;
+      }
+    }
   }
 
   private async syncAllAndExport(note: string | null): Promise<void> {
@@ -195,7 +262,7 @@ export class SyncService {
     };
   }
 
-  private async syncAll(): Promise<void> {
+  private async syncAll(): Promise<"success" | "partial" | "failed"> {
     const sources = loadChannelSources();
     this.db.reconcileChannelSources(sources);
     const channels = sources.map((source) => this.db.upsertChannel(source.key, source.url));
@@ -259,6 +326,7 @@ export class SyncService {
       });
       this.setLibraryState(IDLE_LIBRARY_STATE);
     }
+    return status;
   }
 
   private async syncSingleChannel(handle: string): Promise<void> {

@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statfsSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
+import { demoVolumeID, StationVolume } from "../src/stationVolume.js";
 import { AppDb } from "../src/db.js";
 import { config } from "../src/config.js";
 import { DeviceSyncService } from "../src/deviceSync.js";
@@ -139,4 +141,96 @@ test("truncated exported audio is re-queued after the local cache was removed", 
   await expect.poll(() => service.getState().player.running).toBe(false);
   expect(db.listExportedVideos()).toHaveLength(0);
   expect(db.listRetryableVideos(channel.id).map((item) => item.youtubeVideoId)).toEqual(["truncated"]);
+});
+
+function stationFixture() {
+  const mount = config.deviceMountPath!;
+  Object.assign(config, { isDemo: true, demoPlayerDir: mount });
+  const device = new DeviceSyncService();
+  const service = new SyncService(db, new Logger(), device, provider([video("song")], []));
+  return { mount, service, device };
+}
+
+test("Deck update locks the server, verifies copies, ejects, and recognizes a no-op on retry", async () => {
+  const { mount, service } = stationFixture();
+  const id = randomUUID();
+  expect(service.startStation("update", id, demoVolumeID)).toBe(true);
+  expect(service.startStation("update", id, demoVolumeID)).toBe(true);
+  expect(service.startStation("eject", randomUUID(), demoVolumeID)).toBe(false);
+  expect(await service.startPlayerSync()).toBe(false);
+  expect(service.startSyncAll()).toBe(false);
+  await expect.poll(() => service.getState().station?.phase).toBe("ejected");
+  expect(service.getState().station?.copied).toBe(1);
+  expect(readFileSync(join(mount + ".ejected", "cache", "song [song].mp3"), "utf8")).toBe("audio for song");
+  expect(db.listExportedVideos()).toHaveLength(1);
+  expect(existsSync(db.listExportedVideos()[0]!.local_path)).toBe(false);
+  renameSync(mount + ".ejected", mount);
+  expect(service.startStation("update", randomUUID(), demoVolumeID)).toBe(true);
+  await expect.poll(() => service.getState().station?.phase).toBe("ejected");
+  expect(service.getState().station?.copied).toBe(0);
+});
+
+test("a failed OS eject retains verified cache and permits a stand-alone retry", async () => {
+  const { mount, service } = stationFixture();
+  mkdirSync(mount + ".ejected");
+  writeFileSync(join(mount + ".ejected", "busy"), "fixture");
+  service.startStation("update", randomUUID(), demoVolumeID);
+  await expect.poll(() => service.getState().station?.phase).toBe("failed");
+  expect(service.getState().station?.reason).toBe("EJECT FAILED");
+  expect(db.listExportedVideos()).toHaveLength(0);
+  expect(readFileSync(db.listPendingExportVideos()[0]!.local_path, "utf8")).toBe("audio for song");
+  rmSync(mount + ".ejected", {recursive: true});
+  service.startStation("eject", randomUUID(), demoVolumeID);
+  await expect.poll(() => service.getState().station?.phase).toBe("ejected");
+  expect(db.listExportedVideos()).toHaveLength(0);
+});
+
+test("Deck refuses unknown players, file collisions, symlink directories and replaced mounts", async () => {
+  const { mount, service, device } = stationFixture();
+  service.startStation("eject", randomUUID(), randomUUID());
+  await expect.poll(() => service.getState().station?.phase).toBe("failed");
+  expect(existsSync(mount)).toBe(true);
+  mkdirSync(join(mount, "cache"));
+  writeFileSync(join(mount, "cache", "song [song].mp3"), "keep");
+  service.startStation("update", randomUUID(), demoVolumeID);
+  await expect.poll(() => service.getState().station?.phase).toBe("failed");
+  const item = db.listPendingExportVideos()[0]!;
+  expect(readFileSync(join(mount, "cache", "song [song].mp3"), "utf8")).toBe("keep");
+  const target = await StationVolume.attach(await device.getStatus(), demoVolumeID);
+  try {
+    renameSync(join(mount, "cache"), join(mount, "preserved"));
+    symlinkSync(root, join(mount, "cache"));
+    await expect(target.copy(item)).rejects.toThrow();
+    expect(existsSync(join(root, "song [song].mp3"))).toBe(false);
+    renameSync(mount, mount + ".unplugged");
+    mkdirSync(mount);
+    await expect(target.copy(item)).rejects.toThrow("PLAYER REMOVED");
+    expect(existsSync(join(mount, "cache"))).toBe(false);
+  } finally { await target.close(); }
+});
+
+test("Deck preflight measures required bytes before creating a destination", async () => {
+  const { mount, device } = stationFixture();
+  const target = await StationVolume.attach(await device.getStatus(), demoVolumeID);
+  try {
+    const path = join(config.downloadsDir, "sparse.mp3");
+    writeFileSync(path, "");
+    const { bsize, bavail } = statfsSync(mount);
+    truncateSync(path, (bavail + 2) * bsize);
+    await expect(target.preflight([{ id: 1, title: "", local_path: path, downloaded_at: null, channel_handle: null }]))
+      .rejects.toThrow("NO SPACE");
+    expect(existsSync(join(mount, "cache"))).toBe(false);
+  } finally { await target.close(); }
+});
+
+test("Deck update keeps the player mounted after a failed source refresh", async () => {
+  const { mount, device } = stationFixture();
+  const failed = provider([], []);
+  failed.discoverSource = async () => { throw new Error("fixture network outage"); };
+  const service = new SyncService(db, new Logger(), device, failed);
+  service.startStation("update", randomUUID(), demoVolumeID);
+  await expect.poll(() => service.getState().station?.phase).toBe("failed");
+  expect(service.getState().station?.reason).toBe("CHECK FAILED");
+  expect(existsSync(mount)).toBe(true);
+  expect(db.listExportedVideos()).toHaveLength(0);
 });

@@ -168,6 +168,14 @@ See [docs/architecture.md](docs/architecture.md) for a deeper walkthrough.
 - Logs: `data/logs/app.log`
 - Downloads: `downloads/`
 
+## Stream Deck player controls on macOS
+
+The companion `streamdeck` project owns the Mini and enrolls players by volume UUID. Run the server under the same Mac account. Its loopback-only `POST /api/station/player` accepts an Update or Eject command for the enrolled player. Both use the same reservation as browser-initiated syncs. The dashboard exposes the command ID, phase and verified copy count. The server records the outcome in the existing runs table as `deck-update` or `deck-eject`.
+
+Update checks configured sources, reconciles existing tracks and checks local audio and free space before copying. Each new track is written to a temporary file on the pinned player, flushed, read back for SHA-256 verification and published without replacing an existing file. A conflicting file stays in place. Export marks and cache cleanup follow confirmed ejection. After an interruption, reconnect the player and press Update again to reconcile completed files. A process killed during a copy can leave a hidden `.mp3-deck-*.part` file on the player.
+
+Standalone Eject works independently of source configuration. Disk Arbitration checks that the volume is the same enrolled, removable USB attachment before requesting a normal unmount and eject. To check compatibility and enrollment while leaving the player mounted, run `swift scripts/station-disk.swift inspect /Volumes/AGP-A02T`. The hardware path requires the macOS Swift toolchain and system Python 3. Operation failures are recorded in `data/logs/app.log`.
+
 ## AI/Codex Collaboration
 
 Codex helped turn an existing personal utility into a portfolio-ready product by adding demo mode, tightening the reviewer workflow, expanding Playwright coverage, and reframing docs around local-first device sync. I reviewed the architecture, product framing, operational states, and implementation tradeoffs.
