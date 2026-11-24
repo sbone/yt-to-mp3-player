@@ -164,9 +164,12 @@ See [docs/architecture.md](docs/architecture.md) for a deeper walkthrough.
 
 ## State and Files
 
+- Source list: `channels.txt`
 - App DB: `data/app.db`
 - Logs: `data/logs/app.log`
 - Downloads: `downloads/`
+
+To move the downloader to another Mac, snapshot the idle library, restore it to a new directory and select that directory with `MP3_STATE_DIR` on the new server. Restore preserves SQLite history and updates absolute track paths. The walkthrough includes transfer verification, a first-run check and rollback. [Migrate a library from the Air to the Pro](docs/migrate-macos.md)
 
 ## Stream Deck player controls on macOS
 

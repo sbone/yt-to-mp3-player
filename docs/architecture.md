@@ -24,6 +24,8 @@ SQLite tracks:
 
 The database intentionally keeps the original `youtube_video_id` naming for compatibility, even though the product UI now talks about generic media sources.
 
+In normal mode the source list, SQLite database, logs and download cache live under the working directory by default. A server started with `MP3_STATE_DIR` reads an existing restored library at that absolute path. Code, web assets and the demo stay with the checkout. SQLite retains absolute track paths after export, so restore rebases those paths as well as pending cache paths. The file-based source list must travel with the ledger because startup reconciles which channels are active. [Mac migration procedure](migrate-macos.md)
+
 ## Media Provider Boundary
 
 `SyncService` depends on a media provider instead of calling `yt-dlp` directly.
